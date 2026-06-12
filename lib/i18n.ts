@@ -47,6 +47,12 @@ export const LANGUAGES = [
 export type CountryCode = (typeof COUNTRIES)[number]["code"];
 export type LangCode = (typeof LANGUAGES)[number]["code"];
 
+/** Kombinacje pre-renderowane przy buildzie; pozostałe powstają dynamicznie w runtime */
+export const STATIC_LOCALE_PARAMS: { country: CountryCode; lang: LangCode }[] = [
+  { country: "pl", lang: "pl" },
+  { country: "us", lang: "en" },
+];
+
 const LABELS: Record<
   LangCode,
   {

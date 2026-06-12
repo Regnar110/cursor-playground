@@ -1,11 +1,15 @@
+import { dataTag } from "@/lib/cache-tags";
 import type { CacheLabData } from "@/lib/data/cache-lab";
 
 type Props = {
   data: CacheLabData;
+  country: string;
+  lang: string;
 };
 
-/** Prezentacja wyniku getCacheLabData() — sama nie jest cache'owana. */
-export function CacheLabDataPanel({ data }: Props) {
+export function CacheLabDataPanel({ data, country, lang }: Props) {
+  const dataTagValue = dataTag("cache-lab", country, lang);
+
   return (
     <div className="space-y-4 rounded-xl border-2 border-sky-300 bg-sky-50 p-5 dark:border-sky-800 dark:bg-sky-950/40">
       <div className="flex flex-wrap items-center gap-2">
@@ -13,7 +17,7 @@ export function CacheLabDataPanel({ data }: Props) {
           WARSTWA DATA
         </span>
         <span className="text-xs text-sky-700 dark:text-sky-300">
-          tag: cache-lab-data · funkcja getCacheLabData()
+          tag: {dataTagValue} · getCacheLabData()
         </span>
       </div>
 

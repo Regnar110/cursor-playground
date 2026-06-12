@@ -1,4 +1,5 @@
 import { cacheLife, cacheTag } from "next/cache";
+import { uiTag } from "@/lib/cache-tags";
 import { getCacheLabData } from "@/lib/data/cache-lab";
 
 type Props = {
@@ -9,7 +10,7 @@ type Props = {
 export async function CacheLabUiPanel({ country, lang }: Props) {
   "use cache: remote";
   cacheLife("minutes");
-  cacheTag("cache-lab-ui", `cache-lab-ui-${country}-${lang}`);
+  cacheTag(uiTag("cache-lab", country, lang));
 
   const data = await getCacheLabData(country, lang);
   const uiRenderedAt = new Date().toISOString();
@@ -21,7 +22,7 @@ export async function CacheLabUiPanel({ country, lang }: Props) {
           WARSTWA UI
         </span>
         <span className="text-xs text-violet-700 dark:text-violet-300">
-          tag: cache-lab-ui · use cache: remote
+          tag: {uiTag("cache-lab", country, lang)} · use cache: remote
         </span>
       </div>
 

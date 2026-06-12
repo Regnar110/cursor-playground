@@ -1,4 +1,5 @@
 import { cacheLife, cacheTag } from "next/cache";
+import { uiTag } from "@/lib/cache-tags";
 import { getLabels, type LangCode } from "@/lib/i18n";
 import { getPosts } from "@/lib/data/posts";
 
@@ -10,7 +11,7 @@ type Props = {
 export async function CachedPostsList({ country, lang }: Props) {
   "use cache: remote";
   cacheLife("hours");
-  cacheTag("posts-ui", `posts-ui-${country}-${lang}`);
+  cacheTag(uiTag("posts", country, lang));
 
   const labels = getLabels(lang);
   const data = await getPosts(country, lang);

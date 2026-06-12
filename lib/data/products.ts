@@ -1,4 +1,5 @@
 import { cacheLife, cacheTag } from "next/cache";
+import { dataTag } from "@/lib/cache-tags";
 
 export type Product = {
   id: number;
@@ -20,7 +21,7 @@ export type ProductsResponse = {
 export async function getProducts(country: string, lang: string): Promise<ProductsResponse> {
   "use cache: remote";
   cacheLife("hours");
-  cacheTag("products", `products-${country}-${lang}`);
+  cacheTag(dataTag("products", country, lang));
 
   const res = await fetch(
     "https://dummyjson.com/products?limit=8&select=title,description,price,rating,brand,thumbnail",

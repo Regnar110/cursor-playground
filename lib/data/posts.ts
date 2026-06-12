@@ -1,4 +1,5 @@
 import { cacheLife, cacheTag } from "next/cache";
+import { dataTag } from "@/lib/cache-tags";
 
 export type Post = {
   id: number;
@@ -19,7 +20,7 @@ export type PostsResponse = {
 export async function getPosts(country: string, lang: string): Promise<PostsResponse> {
   "use cache: remote";
   cacheLife("hours");
-  cacheTag("posts", `posts-${country}-${lang}`);
+  cacheTag(dataTag("posts", country, lang));
 
   const res = await fetch("https://dummyjson.com/posts?limit=8&select=title,body,userId,tags,reactions", {
     next: { revalidate: 3600 },

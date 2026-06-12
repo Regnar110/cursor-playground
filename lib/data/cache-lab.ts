@@ -1,4 +1,5 @@
 import { cacheLife, cacheTag } from "next/cache";
+import { dataTag } from "@/lib/cache-tags";
 
 export type CacheLabData = {
   quote: string;
@@ -14,7 +15,7 @@ export async function getCacheLabData(
 ): Promise<CacheLabData> {
   "use cache: remote";
   cacheLife("minutes");
-  cacheTag("cache-lab-data", `cache-lab-data-${country}-${lang}`);
+  cacheTag(dataTag("cache-lab", country, lang));
 
   const res = await fetch("https://dummyjson.com/quotes/random", {
     next: { revalidate: 300 },

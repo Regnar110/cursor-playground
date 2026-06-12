@@ -35,7 +35,12 @@ export default async function ProductsPage({ params }: Props) {
           <h2 className="text-2xl font-semibold">{labels.products}</h2>
           <CacheBadge label="remote cache: data + UI" />
         </div>
-        <RevalidateButton label={labels.revalidate} tag="products" />
+        <RevalidateButton
+          label={labels.revalidate}
+          resource="products"
+          country={country}
+          lang={lang}
+        />
       </div>
       <p className="text-sm text-zinc-500">{labels.fromApi}</p>
       <Suspense fallback={<ProductsSkeleton />}>

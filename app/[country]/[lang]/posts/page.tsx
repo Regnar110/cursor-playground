@@ -35,7 +35,12 @@ export default async function PostsPage({ params }: Props) {
           <h2 className="text-2xl font-semibold">{labels.posts}</h2>
           <CacheBadge label="remote cache: data + UI" />
         </div>
-        <RevalidateButton label={labels.revalidate} tag="posts" />
+        <RevalidateButton
+          label={labels.revalidate}
+          resource="posts"
+          country={country}
+          lang={lang}
+        />
       </div>
       <p className="text-sm text-zinc-500">{labels.fromApi}</p>
       <Suspense fallback={<PostsSkeleton />}>

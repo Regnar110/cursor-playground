@@ -1,6 +1,7 @@
 "use server";
 
 import { revalidatePath, revalidateTag, updateTag } from "next/cache";
+import { dataTag, uiTag } from "@/lib/cache-tags";
 import { getCacheLabData } from "@/lib/data/cache-lab";
 
 export type CacheLabActionResult = {
@@ -18,15 +19,14 @@ export async function cacheLabUpdateTagData(
   country: string,
   lang: string,
 ): Promise<CacheLabActionResult> {
-  updateTag("cache-lab-data");
-  updateTag(`cache-lab-data-${country}-${lang}`);
+  const tag = dataTag("cache-lab", country, lang);
+  updateTag(tag);
 
   const fresh = await getCacheLabData(country, lang);
 
   return {
     action: "updateTag",
-    message:
-      "Natychmiastowa invalidacja tagu cache-lab-data. Ten sam request widzi świeże dane z funkcji DATA.",
+    message: `Natychmiastowa invalidacja ${tag}.`,
     freshData: {
       quote: fresh.quote,
       author: fresh.author,
@@ -40,13 +40,12 @@ export async function cacheLabUpdateTagUi(
   country: string,
   lang: string,
 ): Promise<CacheLabActionResult> {
-  updateTag("cache-lab-ui");
-  updateTag(`cache-lab-ui-${country}-${lang}`);
+  const tag = uiTag("cache-lab", country, lang);
+  updateTag(tag);
 
   return {
     action: "updateTag",
-    message:
-      "Natychmiastowa invalidacja tagu cache-lab-ui. Przy odświeżeniu strony komponent UI przerenderuje się z nowym uiRenderedAt.",
+    message: `Natychmiastowa invalidacja ${tag}.`,
   };
 }
 
@@ -54,13 +53,12 @@ export async function cacheLabRevalidateTagData(
   country: string,
   lang: string,
 ): Promise<CacheLabActionResult> {
-  revalidateTag("cache-lab-data", "max");
-  revalidateTag(`cache-lab-data-${country}-${lang}`, "max");
+  const tag = dataTag("cache-lab", country, lang);
+  revalidateTag(tag, "max");
 
   return {
     action: "revalidateTag",
-    message:
-      "Rewalidacja w tle (stale-while-revalidate). Bieżąca odpowiedź może być jeszcze stara — świeże dane pojawią się przy następnym żądaniu.",
+    message: `Rewalidacja w tle: ${tag}`,
   };
 }
 
@@ -68,13 +66,12 @@ export async function cacheLabRevalidateTagUi(
   country: string,
   lang: string,
 ): Promise<CacheLabActionResult> {
-  revalidateTag("cache-lab-ui", "max");
-  revalidateTag(`cache-lab-ui-${country}-${lang}`, "max");
+  const tag = uiTag("cache-lab", country, lang);
+  revalidateTag(tag, "max");
 
   return {
     action: "revalidateTag",
-    message:
-      "Rewalidacja UI w tle. Następne żądanie wyrenderuje nowy komponent UI (nowy uiRenderedAt), ale DATA wewnątrz może pochodzić ze swojego cache.",
+    message: `Rewalidacja w tle: ${tag}`,
   };
 }
 
@@ -86,7 +83,6 @@ export async function cacheLabRevalidatePath(
 
   return {
     action: "revalidatePath",
-    message:
-      "Invalidacja przez soft tagi ścieżki. Wpływa na cache powiązany z tą trasą (DATA + UI na tej podstronie).",
+    message: `Invalidacja soft tagów ścieżki /${country}/${lang}/cache-lab`,
   };
 }

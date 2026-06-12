@@ -1,12 +1,66 @@
+const v8 = require("v8");
 const { LRUCache } = require("lru-cache");
-const { createClient } = require("redis");
+const { createClient, RESP_TYPES } = require("redis");
 
-const REDIS_KEY_PREFIX = "next-cache:";
-const TAG_KEY_PREFIX = "tag:";
-const REVALIDATED_TAGS_SET = "revalidated-tags";
-const CACHE_TAG_INDEX_PREFIX = "cache-tag:";
-const LOCK_PREFIX = "cache-lock:";
-const INVALIDATE_CHANNEL = "cache:invalidate";
+/**
+ * node-redis v6 domyślnie dekoduje odpowiedzi jako string UTF-8, co niszczy binarne
+ * dane v8 (zapis Buffer → odczyt string → "Unable to deserialize cloned data").
+ * Ten widok klienta zwraca BLOB-y jako Buffer — używamy go TYLKO do odczytu wpisów.
+ * sMembers/exists/itp. zostają na zwykłym kliencie (stringi).
+ */
+const BUFFER_TYPE_MAPPING = { [RESP_TYPES.BLOB_STRING]: Buffer };
+
+/**
+ * Schemat kluczy Redis (Redis Insight grupuje po ":"):
+ *
+ * {cacheKey z ; zamiast :}            — payload; klucz Next.js, ":" → ";" (JSON nie rozbija drzewa)
+ * lock:{cacheKey z ;}                 — single-flight lock (tymczasowy)
+ * index:data:cache-lab:pl:pl          — SET cacheKey (zakodowanych); drzewo index:data / index:ui
+ * meta:revalidated-at:data:cache-lab:pl:pl — timestamp invalidacji tagu
+ * meta:revalidated-tags               — SET nazw tagów
+ */
+const REVALIDATED_TAGS_SET = "meta:revalidated-tags";
+const INVALIDATE_CHANNEL = "pubsub:invalidate";
+
+/**
+ * cacheKey Next.js to JSON z ":" w środku (np. {"country":"us"}). Redis Insight rozbija
+ * klucze po ":", więc surowy cacheKey rozpadałby się na śmieciowe gałęzie. Zamieniamy ":"
+ * na ";", żeby cały cacheKey był jednym czytelnym kluczem. Tagi (index / meta) są budowane
+ * z osobnych stringów ("data:posts:pl:pl") i pozostają nietknięte.
+ */
+function encodeCacheKey(cacheKey) {
+  return cacheKey.replace(/:/g, ";");
+}
+
+/** Kanoniczny identyfikator wpisu — używany jako klucz Redis, klucz LRU i member w index SET */
+function redisEntryKey(cacheKey) {
+  return encodeCacheKey(cacheKey);
+}
+
+function redisLockKey(cacheKey) {
+  return `lock:${encodeCacheKey(cacheKey)}`;
+}
+
+/** tag = "data:posts:pl:pl" → "meta:revalidated-at:data:posts:pl:pl" */
+function redisRevalidatedAtKey(tag) {
+  return `meta:revalidated-at:${tag}`;
+}
+
+/** tag = "data:posts:pl:pl" → "index:data:posts:pl:pl" (drzewo index:data / index:ui) */
+function redisIndexKey(tag) {
+  return `index:${tag}`;
+}
+
+function parseTagsMeta(tags) {
+  const primary = tags?.find((t) => t.includes(":") && t.split(":").length >= 4) ?? tags?.[0] ?? "";
+  const parts = primary.split(":");
+
+  return {
+    layer: parts[0] === "data" || parts[0] === "ui" ? parts[0] : "unknown",
+    resource: parts[1] ?? "unknown",
+    locale: parts.length >= 4 ? `${parts[2]}/${parts[3]}` : "global",
+  };
+}
 
 const LOCK_TTL_SECONDS = 30;
 const SINGLE_FLIGHT_POLL_MS = 100;
@@ -88,7 +142,7 @@ async function setupSubscriber() {
       await client.connect();
       await client.subscribe(INVALIDATE_CHANNEL, (message) => {
         try {
-          const payload = JSON.parse(message);
+          const payload = v8.deserialize(Buffer.from(message, "base64"));
           if (payload.tags?.length) {
             invalidateLruByTags(payload.tags);
           }
@@ -119,7 +173,10 @@ async function publishInvalidation(payload) {
     if (!redis) {
       return;
     }
-    await redis.publish(INVALIDATE_CHANNEL, JSON.stringify(payload));
+    await redis.publish(
+      INVALIDATE_CHANNEL,
+      v8.serialize(payload).toString("base64"),
+    );
   } catch (err) {
     console.warn("[remote-cache-handler] publish failed:", err.message);
   }
@@ -176,8 +233,9 @@ function bufferToStream(buffer) {
 }
 
 function deserializeEntry(raw) {
-  const parsed = JSON.parse(raw);
-  const buffer = Buffer.from(parsed.value, "base64");
+  const serialized = Buffer.isBuffer(raw) ? raw : Buffer.from(raw);
+  const parsed = v8.deserialize(serialized);
+  const buffer = Buffer.isBuffer(parsed.value) ? parsed.value : Buffer.from(parsed.value);
 
   return {
     value: bufferToStream(buffer),
@@ -192,13 +250,19 @@ function deserializeEntry(raw) {
 }
 
 function serializeEntry(entry, buffer) {
-  return JSON.stringify({
-    value: buffer.toString("base64"),
+  const meta = parseTagsMeta(entry.tags);
+  return v8.serialize({
+    value: buffer,
     tags: entry.tags,
     stale: entry.stale,
     timestamp: entry.timestamp,
     expire: entry.expire,
     revalidate: entry.revalidate,
+    _meta: {
+      ...meta,
+      tags: entry.tags,
+      createdAt: new Date(entry.timestamp).toISOString(),
+    },
   });
 }
 
@@ -236,7 +300,9 @@ async function waitForRemoteEntry(redis, cacheKey, softTags) {
   for (let attempt = 0; attempt < SINGLE_FLIGHT_MAX_ATTEMPTS; attempt++) {
     await new Promise((resolve) => setTimeout(resolve, SINGLE_FLIGHT_POLL_MS));
 
-    const stored = await redis.get(REDIS_KEY_PREFIX + cacheKey);
+    const stored = await redis
+      .withTypeMapping(BUFFER_TYPE_MAPPING)
+      .get(redisEntryKey(cacheKey));
     if (stored) {
       const entry = deserializeEntry(stored);
       if (!isExpired(entry) && !isSoftTagStale(entry, softTags) && !isTagStale(entry, entry.tags)) {
@@ -244,7 +310,7 @@ async function waitForRemoteEntry(redis, cacheKey, softTags) {
       }
     }
 
-    const lockExists = await redis.exists(LOCK_PREFIX + cacheKey);
+    const lockExists = await redis.exists(redisLockKey(cacheKey));
     if (!lockExists) {
       break;
     }
@@ -254,7 +320,7 @@ async function waitForRemoteEntry(redis, cacheKey, softTags) {
 }
 
 async function tryAcquireRenderLock(redis, cacheKey) {
-  const result = await redis.set(LOCK_PREFIX + cacheKey, instanceId, {
+  const result = await redis.set(redisLockKey(cacheKey), instanceId, {
     NX: true,
     EX: LOCK_TTL_SECONDS,
   });
@@ -263,7 +329,7 @@ async function tryAcquireRenderLock(redis, cacheKey) {
 
 async function releaseRenderLock(redis, cacheKey) {
   try {
-    await redis.del(LOCK_PREFIX + cacheKey);
+    await redis.del(redisLockKey(cacheKey));
   } catch {
     // lock may have expired
   }
@@ -273,12 +339,14 @@ module.exports = {
   async get(cacheKey, softTags) {
     await setupSubscriber();
 
+    const entryKey = redisEntryKey(cacheKey);
+
     const pendingPromise = pendingSets.get(cacheKey);
     if (pendingPromise) {
       await pendingPromise;
     }
 
-    const lruEntry = lru.get(cacheKey);
+    const lruEntry = lru.get(entryKey);
     if (
       lruEntry &&
       !isExpired(lruEntry) &&
@@ -294,20 +362,20 @@ module.exports = {
         return undefined;
       }
 
-      const stored = await redis.get(REDIS_KEY_PREFIX + cacheKey);
+      const stored = await redis.withTypeMapping(BUFFER_TYPE_MAPPING).get(entryKey);
       if (stored) {
         const entry = deserializeEntry(stored);
         if (!isExpired(entry) && !isSoftTagStale(entry, softTags) && !isTagStale(entry, entry.tags)) {
-          lru.set(cacheKey, entry);
+          lru.set(entryKey, entry);
           return cloneEntryForReturn(entry);
         }
       }
 
-      const lockHeld = await redis.exists(LOCK_PREFIX + cacheKey);
+      const lockHeld = await redis.exists(redisLockKey(cacheKey));
       if (lockHeld) {
         const waitedEntry = await waitForRemoteEntry(redis, cacheKey, softTags);
         if (waitedEntry) {
-          lru.set(cacheKey, waitedEntry);
+          lru.set(entryKey, waitedEntry);
           return cloneEntryForReturn(waitedEntry);
         }
       }
@@ -316,7 +384,7 @@ module.exports = {
       if (!acquired) {
         const waitedEntry = await waitForRemoteEntry(redis, cacheKey, softTags);
         if (waitedEntry) {
-          lru.set(cacheKey, waitedEntry);
+          lru.set(entryKey, waitedEntry);
           return cloneEntryForReturn(waitedEntry);
         }
       }
@@ -336,6 +404,7 @@ module.exports = {
     pendingSets.set(cacheKey, pendingPromise);
 
     const redis = await getRedis();
+    const entryKey = redisEntryKey(cacheKey);
 
     try {
       const entry = await pendingEntry;
@@ -347,7 +416,7 @@ module.exports = {
         _size: buffer.length,
       };
 
-      lru.set(cacheKey, storedEntry);
+      lru.set(entryKey, storedEntry);
 
       if (!redis) {
         return;
@@ -356,10 +425,10 @@ module.exports = {
       const ttl = Math.max(entry.expire, 60);
       const pipeline = redis.multi();
 
-      pipeline.set(REDIS_KEY_PREFIX + cacheKey, serializeEntry(entry, buffer), { EX: ttl });
+      pipeline.set(entryKey, serializeEntry(entry, buffer), { EX: ttl });
 
       for (const tag of entry.tags) {
-        pipeline.sAdd(CACHE_TAG_INDEX_PREFIX + tag, cacheKey);
+        pipeline.sAdd(redisIndexKey(tag), entryKey);
       }
 
       await pipeline.exec();
@@ -386,7 +455,7 @@ module.exports = {
         return;
       }
 
-      const values = await redis.mGet(tagKeys.map((tag) => TAG_KEY_PREFIX + tag));
+      const values = await redis.mGet(tagKeys.map((tag) => redisRevalidatedAtKey(tag)));
       for (let i = 0; i < tagKeys.length; i++) {
         if (values[i]) {
           localTagTimestamps.set(tagKeys[i], Number(values[i]));
@@ -421,7 +490,7 @@ module.exports = {
       const keysToDelete = new Set();
 
       for (const tag of tags) {
-        const keys = await redis.sMembers(CACHE_TAG_INDEX_PREFIX + tag);
+        const keys = await redis.sMembers(redisIndexKey(tag));
         for (const key of keys) {
           keysToDelete.add(key);
           lru.delete(key);
@@ -431,13 +500,13 @@ module.exports = {
       const pipeline = redis.multi();
 
       for (const tag of tags) {
-        pipeline.set(TAG_KEY_PREFIX + tag, String(now));
+        pipeline.set(redisRevalidatedAtKey(tag), String(now));
         pipeline.sAdd(REVALIDATED_TAGS_SET, tag);
-        pipeline.del(CACHE_TAG_INDEX_PREFIX + tag);
+        pipeline.del(redisIndexKey(tag));
       }
 
       for (const key of keysToDelete) {
-        pipeline.del(REDIS_KEY_PREFIX + key);
+        pipeline.del(key);
       }
 
       await pipeline.exec();

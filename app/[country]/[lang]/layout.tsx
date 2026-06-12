@@ -1,13 +1,12 @@
 import { notFound } from "next/navigation";
 import { SiteNav } from "@/components/site-nav";
 import {
-  COUNTRIES,
-  LANGUAGES,
   getCountry,
   getLabels,
   getLanguage,
   isValidCountry,
   isValidLang,
+  STATIC_LOCALE_PARAMS,
   type CountryCode,
   type LangCode,
 } from "@/lib/i18n";
@@ -17,13 +16,8 @@ type Props = {
   params: Promise<{ country: string; lang: string }>;
 };
 
-export async function generateStaticParams() {
-  return COUNTRIES.flatMap((country) =>
-    LANGUAGES.map((lang) => ({
-      country: country.code,
-      lang: lang.code,
-    })),
-  );
+export function generateStaticParams() {
+  return STATIC_LOCALE_PARAMS;
 }
 
 export default async function LocaleLayout({ children, params }: Props) {

@@ -1,18 +1,21 @@
 "use server";
 
 import { revalidateTag } from "next/cache";
+import { dataTag, uiTag, type CacheResource } from "@/lib/cache-tags";
 
-export async function revalidatePosts() {
-  revalidateTag("posts", "max");
-  revalidateTag("posts-ui", "max");
+function revalidateResource(resource: CacheResource, country: string, lang: string) {
+  revalidateTag(dataTag(resource, country, lang), "max");
+  revalidateTag(uiTag(resource, country, lang), "max");
 }
 
-export async function revalidateUsers() {
-  revalidateTag("users", "max");
-  revalidateTag("users-ui", "max");
+export async function revalidatePosts(country: string, lang: string) {
+  revalidateResource("posts", country, lang);
 }
 
-export async function revalidateProducts() {
-  revalidateTag("products", "max");
-  revalidateTag("products-ui", "max");
+export async function revalidateUsers(country: string, lang: string) {
+  revalidateResource("users", country, lang);
+}
+
+export async function revalidateProducts(country: string, lang: string) {
+  revalidateResource("products", country, lang);
 }

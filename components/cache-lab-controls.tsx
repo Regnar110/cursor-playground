@@ -10,6 +10,7 @@ import {
   cacheLabUpdateTagUi,
   type CacheLabActionResult,
 } from "@/app/actions/cache-lab";
+import { dataTag, uiTag } from "@/lib/cache-tags";
 
 type Props = {
   country: string;
@@ -23,25 +24,23 @@ type ActionKey =
   | "revalidateTag-ui"
   | "revalidatePath";
 
-const actions: Record<
-  ActionKey,
-  (country: string, lang: string) => Promise<CacheLabActionResult>
-> = {
-  "updateTag-data": cacheLabUpdateTagData,
-  "updateTag-ui": cacheLabUpdateTagUi,
-  "revalidateTag-data": cacheLabRevalidateTagData,
-  "revalidateTag-ui": cacheLabRevalidateTagUi,
-  revalidatePath: cacheLabRevalidatePath,
-};
-
 export function CacheLabControls({ country, lang }: Props) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
   const [result, setResult] = useState<CacheLabActionResult | null>(null);
 
+  const dataTagValue = dataTag("cache-lab", country, lang);
+  const uiTagValue = uiTag("cache-lab", country, lang);
+
   function runAction(key: ActionKey) {
     startTransition(async () => {
-      const res = await actions[key](country, lang);
+      const res = await {
+        "updateTag-data": () => cacheLabUpdateTagData(country, lang),
+        "updateTag-ui": () => cacheLabUpdateTagUi(country, lang),
+        "revalidateTag-data": () => cacheLabRevalidateTagData(country, lang),
+        "revalidateTag-ui": () => cacheLabRevalidateTagUi(country, lang),
+        revalidatePath: () => cacheLabRevalidatePath(country, lang),
+      }[key]();
       setResult(res);
       router.refresh();
     });
@@ -49,65 +48,52 @@ export function CacheLabControls({ country, lang }: Props) {
 
   return (
     <div className="space-y-6">
-      <div className="grid gap-3 sm:grid-cols-2">
+      <div className="grid gap-3 lg:grid-cols-2">
         <ActionGroup title="updateTag() — natychmiast">
           <ActionButton
             disabled={pending}
             onClick={() => runAction("updateTag-data")}
-            label="updateTag → DATA"
-            hint="Unieważnia getCacheLabData(), zwraca świeże dane w tej samej akcji"
+            label={`DATA → ${dataTagValue}`}
+            hint="Invalidacja danych dla bieżącego country/lang"
           />
           <ActionButton
             disabled={pending}
             onClick={() => runAction("updateTag-ui")}
-            label="updateTag → UI"
-            hint="Unieważnia CacheLabUiPanel — widać po router.refresh()"
+            label={`UI → ${uiTagValue}`}
+            hint="Invalidacja UI dla bieżącego country/lang"
           />
         </ActionGroup>
 
-        <ActionGroup title="revalidateTag() — w tle">
+        <ActionGroup title="revalidateTag() — w tle (SWR)">
           <ActionButton
             disabled={pending}
             onClick={() => runAction("revalidateTag-data")}
-            label="revalidateTag → DATA"
-            hint="Stale-while-revalidate; świeże dane przy następnym requeście"
+            label={`revalidate ${dataTagValue}`}
+            hint="Rewalidacja danych — tylko to locale"
           />
           <ActionButton
             disabled={pending}
             onClick={() => runAction("revalidateTag-ui")}
-            label="revalidateTag → UI"
-            hint="Rewalidacja komponentu UI w tle"
+            label={`revalidate ${uiTagValue}`}
+            hint="Rewalidacja UI — tylko to locale"
           />
         </ActionGroup>
 
-        <ActionGroup title="revalidatePath() — soft tagi">
+        <ActionGroup title="revalidatePath()">
           <ActionButton
             disabled={pending}
             onClick={() => runAction("revalidatePath")}
             label={`revalidatePath(/${country}/${lang}/cache-lab)`}
-            hint="Invaliduje cache powiązany ze ścieżką (DATA + UI tej strony)"
+            hint="Invalidacja przez soft tagi ścieżki"
           />
-        </ActionGroup>
-
-        <ActionGroup title="cacheLife() — konfiguracja">
-          <p className="text-sm text-zinc-600 dark:text-zinc-400">
-            Profil <code className="rounded bg-zinc-100 px-1 dark:bg-zinc-800">minutes</code> na
-            DATA i UI. Po upływie <code className="rounded bg-zinc-100 px-1 dark:bg-zinc-800">revalidate</code>{" "}
-            Next.js odświeża wpis w tle. Sprawdź timestampy powyżej — jeśli się nie zmieniają, cache
-            nadal trzyma wpis w LRU lub Redis.
-          </p>
         </ActionGroup>
       </div>
 
-      {pending && (
-        <p className="text-sm text-zinc-500">Wykonywanie akcji cache…</p>
-      )}
+      {pending && <p className="text-sm text-zinc-500">Wykonywanie akcji cache…</p>}
 
       {result && (
         <div className="rounded-xl border border-amber-300 bg-amber-50 p-4 text-sm dark:border-amber-800 dark:bg-amber-950/40">
-          <p className="font-semibold text-amber-900 dark:text-amber-200">
-            {result.action}
-          </p>
+          <p className="font-semibold text-amber-900 dark:text-amber-200">{result.action}</p>
           <p className="mt-1 text-amber-800 dark:text-amber-300">{result.message}</p>
           {result.freshData && (
             <pre className="mt-3 overflow-x-auto rounded-lg bg-white/80 p-3 text-xs dark:bg-zinc-900/80">

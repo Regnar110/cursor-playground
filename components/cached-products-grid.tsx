@@ -1,5 +1,6 @@
 import Image from "next/image";
 import { cacheLife, cacheTag } from "next/cache";
+import { uiTag } from "@/lib/cache-tags";
 import { getLabels, type LangCode } from "@/lib/i18n";
 import { getProducts } from "@/lib/data/products";
 
@@ -11,7 +12,7 @@ type Props = {
 export async function CachedProductsGrid({ country, lang }: Props) {
   "use cache: remote";
   cacheLife("hours");
-  cacheTag("products-ui", `products-ui-${country}-${lang}`);
+  cacheTag(uiTag("products", country, lang));
 
   const labels = getLabels(lang);
   const data = await getProducts(country, lang);
