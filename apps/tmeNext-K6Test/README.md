@@ -16,6 +16,14 @@ Konfiguracja przez env (ustawiane w `docker-compose.yml`, można nadpisać `-e` 
 `docker compose run`): `INSTANCES` (domyślnie 8), `HOST_TEMPLATE`
 (domyślnie `tme-next-{i}:3000`).
 
+Scenariusze domyślnie celują w instancje **bezpośrednio** (testy single-flight
+i invalidacji muszą rozróżniać instancje). Żeby zmierzyć ruch przez load balancer
+nginx (realna ścieżka użytkownika):
+
+```bash
+docker compose run --rm -e HOST_TEMPLATE=nginx:80 -e INSTANCES=1 k6 run /scenarios/cache-load.js
+```
+
 ## Scenariusze
 
 ### `cache-load.js` — ogólne obciążenie

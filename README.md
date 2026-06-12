@@ -15,10 +15,12 @@ Szczegóły cachowania: `apps/tmeNext/docs/CACHING.md`.
 
 ```bash
 npm install
-docker compose up -d --build   # redis + redisinsight + 8x tmeNext (porty 3000-3007)
+docker compose up -d --build   # redis + redisinsight + 8x tmeNext + nginx
 ```
 
-- Aplikacja: http://localhost:3000 … :3007 (każdy port = osobna instancja)
+- **Aplikacja (load balancer nginx)**: http://localhost:8080 — least_conn po 8 instancjach,
+  nagłówek `X-Upstream` pokazuje, która instancja obsłużyła request
+- Pojedyncze instancje: http://localhost:3000 … :3007 (do debugowania/testów per instancja)
 - Redis Insight: http://localhost:5540
 
 ## Komendy Nx

@@ -100,20 +100,23 @@ function redisIndexKey(tag) {
 }
 
 /**
- * Wyciąga metadane (warstwa / zasób / locale) z tagów wpisu na potrzeby pola `_meta`
+ * Wyciąga metadane (warstwa / zasób / scope) z tagów wpisu na potrzeby pola `_meta`
  * w payloadzie — ułatwia debugowanie wpisów w Redis Insight.
  *
+ * Tag = {warstwa}:{zasób}[:{scope...}] — scope jest opcjonalny (dowolna liczba
+ * segmentów: locale, id encji itp.); jego brak oznacza wpis globalny.
+ *
  * @param {string[]} tags - Tagi wpisu cache.
- * @returns {{layer: string, resource: string, locale: string}} Metadane opisowe.
+ * @returns {{layer: string, resource: string, scope: string}} Metadane opisowe.
  */
 function parseTagsMeta(tags) {
-  const primary = tags?.find((t) => t.includes(":") && t.split(":").length >= 4) ?? tags?.[0] ?? "";
+  const primary = tags?.find((t) => t.startsWith("data:") || t.startsWith("ui:")) ?? tags?.[0] ?? "";
   const parts = primary.split(":");
 
   return {
     layer: parts[0] === "data" || parts[0] === "ui" ? parts[0] : "unknown",
     resource: parts[1] ?? "unknown",
-    locale: parts.length >= 4 ? `${parts[2]}/${parts[3]}` : "global",
+    scope: parts.length > 2 ? parts.slice(2).join(":") : "global",
   };
 }
 
@@ -416,7 +419,7 @@ function deserializeEntry(raw) {
 }
 
 /**
- * Serializuje wpis do binarnego v8 z dodatkowym `_meta` (layer/resource/locale/tags/createdAt)
+ * Serializuje wpis do binarnego v8 z dodatkowym `_meta` (layer/resource/scope/tags/createdAt)
  * ułatwiającym inspekcję w Redis Insight.
  *
  * Uwaga produkcyjna: format v8.serialize jest związany z wersją Node — wszystkie instancje

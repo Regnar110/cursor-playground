@@ -36,7 +36,14 @@ flowchart LR
 ## 2. Jak cachować (przepis)
 
 Dwie osobne warstwy = dwa osobne wpisy, każdy z **jednym tagiem 1:1**
-(zawsze per locale, bez tagów globalnych). Pomocniki: `lib/cache-tags.ts`.
+Format tagu: `{warstwa}:{zasób}[:{scope...}]` — scope jest **opcjonalny** i dowolny
+(locale, id encji, wariant… albo nic, gdy zasób jest globalny). Pomocniki: `lib/cache-tags.ts`.
+
+```ts
+dataTag("config")                  // "data:config"        — zasób globalny
+dataTag("posts", country, lang)    // "data:posts:pl:pl"   — scope = locale
+uiTag("products", productId)       // "ui:products:42"     — scope = id encji
+```
 
 ```ts
 // DATA — wynik fetcha (lib/data/posts.ts)
@@ -194,7 +201,7 @@ meta:
   revalidated-at:data:…       ← timestampy (liczba, nie cache!)
   revalidated-tags
 lock:…                        ← chwilowe locki renderu
-["abc…","hash…",[{"country";"pl"…}]]   ← wpis; w polu _meta: layer/resource/locale/createdAt
+["abc…","hash…",[{"country";"pl"…}]]   ← wpis; w polu _meta: layer/resource/scope/createdAt
 ```
 
 ---
@@ -236,11 +243,16 @@ instancje muszą mieć tę samą wersję runtime (jeden obraz Docker to gwarantu
 
 ```mermaid
 flowchart TD
-    LB["ruch / k6"] --> I1["tme-next-1"] & I2["tme-next-2"] & IN["… tme-next-8"]
+    U["ruch (http://localhost:8080)"] --> LB["nginx<br/>least_conn + failover"]
+    LB --> I1["tme-next-1"] & I2["tme-next-2"] & IN["… tme-next-8"]
+    K6["k6 (testy per instancja)"] -.-> I1 & I2 & IN
     I1 & I2 & IN --> R[("redis")]
     R -.->|Pub/Sub| I1 & I2 & IN
 ```
 
+- Wejście dla użytkownika: **nginx na :8080** (`nginx/default.conf`) — `least_conn`,
+  `proxy_next_upstream` (padnięta instancja jest pomijana), nagłówek `X-Upstream`
+  do debugowania. Porty 3000–3007 zostają jako bezpośredni dostęp per instancja.
 - Jeden obraz `tme-next:local` = jeden artefakt `.next` dla wszystkich instancji.
 - Sticky sessions **nie są potrzebne** — spójność zapewnia Redis + Pub/Sub + timestampy.
 - Build obrazu działa bez Redisa: handler wykrywa `NEXT_PHASE=phase-production-build`
