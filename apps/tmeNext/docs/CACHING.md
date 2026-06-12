@@ -305,6 +305,54 @@ const nextConfig: NextConfig = {
 
 ---
 
+## 10. Słowniczek
+
+### Pojęcia Next.js
+
+| Pojęcie | Co to znaczy |
+|---|---|
+| **Cache Components** | Tryb Next.js 16 (`cacheComponents: true`), w którym cachowanie jest jawne: cachuje się tylko to, co oznaczysz dyrektywą `use cache`. Włącza też PPR. |
+| **PPR (Partial Prerendering)** | Strona = statyczna powłoka (prerenderowana) + dynamiczne fragmenty dostreamowane w runtime. W buildzie oznaczone `◐`. |
+| **`use cache: remote`** | Dyrektywa: "wynik tej funkcji/komponentu cachuj przez handler `remote`" — czyli nasz LRU + Redis. Zwykłe `use cache` używa wbudowanego handlera in-process. |
+| **cacheKey** | Klucz wpisu generowany przez Next.js z id funkcji + jej argumentów (dlatego wszystko dynamiczne przekazuje się argumentami). Dla handlera to nieprzezroczysty string. |
+| **Tag (`cacheTag`)** | Etykieta wpisu nadawana przez nas, do celowanej invalidacji. U nas format `{warstwa}:{zasób}[:{scope...}]`, jeden tag 1:1 na wpis. |
+| **Scope** | Opcjonalna część tagu zawężająca wpis: locale (`pl:pl`), id encji (`42`), wariant… Brak scope = zasób globalny. |
+| **Soft tag** | Tag generowany automatycznie przez Next.js ze ścieżki routingu (`_N_T_/pl/pl/posts`). Używany przez `revalidatePath` — handler dostaje je w `get()` jako `softTags`. |
+| **`cacheLife`** | Profil czasu życia wpisu: `stale` (jak długo klient nie pyta serwera), `revalidate` (po jakim czasie odświeżyć), `expire` (po jakim czasie wpis jest bezużyteczny). |
+| **`updateTag`** | Invalidacja natychmiastowa (tylko Server Actions) — ten sam request widzi już świeże dane. |
+| **`revalidateTag(tag, profil)`** | Invalidacja SWR — bieżący request może dostać starą wersję, świeża przy następnym. Działa też w route handlerach. |
+| **`revalidatePath`** | Invalidacja wszystkiego, co powiązane ze ścieżką URL (przez soft tagi). |
+| **SWR (stale-while-revalidate)** | Strategia: serwuj starą wersję od razu, odśwież w tle. Mniejsza latencja kosztem chwilowej nieświeżości. |
+| **Full route cache (ISR)** | Cache całego wyrenderowanego HTML strony (nagłówek `s-maxage=60`). **Osobna warstwa nad naszym handlerem**, per instancja — stąd okno konwergencji po invalidacji (sekcja 4). |
+| **Cache handler** | Nasza implementacja interfejsu Next.js: `get` / `set` / `refreshTags` / `getExpiration` / `updateTags`. Next woła te metody, my decydujemy gdzie i jak trzymać dane. |
+
+### Pojęcia handlera (remote-handler.mjs + Redis)
+
+| Pojęcie | Co to znaczy |
+|---|---|
+| **L1 / LRU** | Cache w pamięci procesu (500 wpisów / 50 MB / TTL 15 s). Najszybszy, ale prywatny dla instancji i ginie z procesem. |
+| **L2 / Redis** | Wspólny cache wszystkich instancji. Wpis trafia tu przy `set()`, a hit kopiowany jest do L1. |
+| **Warstwa DATA / UI** | Dwa niezależne wpisy: DATA = wynik fetcha (tag `data:*`), UI = wyrenderowany komponent (tag `ui:*`). UI "zamraża" w sobie dane, dlatego invaliduje się zwykle oba. |
+| **Wpis (entry)** | Payload + metadane (`tags`, `timestamp`, `revalidate`, `expire`, `stale`), serializowane przez `v8.serialize` do binarnego STRING-a w Redis. |
+| **`v8.serialize`** | Natywna serializacja Node — szybka i obsługuje Buffery, ale format zależy od wersji Node: wszystkie instancje muszą mieć ten sam runtime. |
+| **Kodowanie klucza (`:` → `;`)** | cacheKey zawiera JSON ze `:`, a Redis Insight buduje drzewo po `:` — podmiana na `;` trzyma cały wpis jako jeden węzeł. Tagi zostają ze `:` (grupują się w drzewo). |
+| **`index:{tag}`** | SET w Redis: tag → klucze wpisów, które go noszą. Dzięki temu `updateTags` wie, co skasować. Member = dokładnie nazwa klucza wpisu (1:1). |
+| **`meta:revalidated-at:{tag}`** | Timestamp ostatniej invalidacji tagu (TTL 7 dni). To **backstop**: wpis starszy niż ten timestamp jest odrzucany przy odczycie, nawet jeśli kasowanie go ominęło. |
+| **`meta:revalidated-tags`** | Rejestr (SET) tagów, które kiedykolwiek invalidowano — `refreshTags()` wie, o które timestampy pytać; wygasłe są przycinane. |
+| **Backstop** | Drugi mechanizm spójności obok Pub/Sub: porównanie timestampów działa nawet, gdy instancja przegapiła komunikat (restart, chwilowy brak połączenia). |
+| **Pub/Sub** | Kanał `pubsub:invalidate` w Redis. Po invalidacji każda instancja dostaje komunikat i czyści swoje L1 — bez czekania na TTL. |
+| **Single-flight** | Gwarancja, że przy cache miss renderuje **jedna** instancja, reszta czeka na jej wynik (polling co 100 ms, max ~5 s). Chroni API/DB przed lawiną identycznych renderów. |
+| **Thundering herd** | Problem, który single-flight rozwiązuje: nagły ruch na zimny klucz → bez locka każda instancja renderowałaby to samo równolegle. |
+| **Lock (`lock:{cacheKey}`)** | Klucz w Redis zdobywany przez `SET NX` z TTL 30 s — "ja renderuję". Zwalniany po `set()`. |
+| **`instanceId`** | Wartość locka: `pid-{pid}-{48 bitów losowych}`. Losowy sufiks jest konieczny — PID-y w kontenerach się powtarzają. |
+| **Compare-and-delete** | Atomowy skrypt Lua zwalniający lock **tylko jeśli nadal należy do nas**. Bez tego render dłuższy niż TTL locka kasowałby lock przejęty już przez inną instancję. |
+| **Cooldown** | Po nieudanym połączeniu z Redis handler przez 30 s nie ponawia prób i działa na samym L1 — zamiast dobijać się do martwego serwera przy każdym requeście. |
+| **Fallback LRU-only** | Tryb awaryjny bez Redis: wszystko działa, ale cache jest per instancja i invalidacje nie propagują się między instancjami. |
+| **`_meta`** | Pole doklejane do payloadu w Redis (layer/resource/scope/tags/createdAt) — wyłącznie do debugowania w Redis Insight, Next.js go nie widzi. |
+| **Instancja** | Jeden proces Next.js. U nas: 8 kontenerów z tego samego obrazu (= jeden artefakt `.next`), każdy z własnym L1 i `instanceId`, wspólny Redis. |
+
+---
+
 ## Ściągawka
 
 ```
