@@ -12,7 +12,7 @@ import Redis from "ioredis";
  * - Pub/Sub — natychmiastowe czyszczenie L1 na wszystkich instancjach po invalidacji.
  * - Single-flight lock — przy cache miss tylko jedna instancja renderuje, reszta czeka.
  * - Timestampy tagów (meta:revalidated-at:*) — trwały backstop, gdyby instancja
- *   przegapiła komunikat Pub/Sub (np. restart, chwilowy brak połączenia).
+ *   przegapiła komunik.at Pub/Sub (np. restart, chwilowy brak połączenia).
  *
  * Schemat kluczy Redis (Redis Insight grupuje po ":"):
  *
@@ -179,6 +179,23 @@ function createRedis() {
   client.on("error", (err) => {
     if (err?.message) {
       console.warn("[remote-cache-handler] Redis error:", err.message);
+    }
+  });
+  // Po wyczerpaniu retryStrategy (awaria > ~5 s) ioredis emituje "end" i klient jest
+  // martwy NA ZAWSZE. Bez tego resetu getRedis()/setupSubscriber() w nieskończoność
+  // zwracałyby trupa (redisConnecting trzyma rozwiązany promise ze starym klientem)
+  // i handler nigdy nie wróciłby do Redis aż do restartu procesu.
+  client.on("end", () => {
+    if (redisClient === client) {
+      redisClient = null;
+      redisConnecting = null;
+      redisUnavailableUntil = Date.now() + 30_000;
+      console.warn("[remote-cache-handler] Redis connection ended — LRU only, reconnect after 30s");
+    }
+    if (redisSubClient === client) {
+      redisSubClient = null;
+      redisSubConnecting = null;
+      console.warn("[remote-cache-handler] Pub/Sub connection ended — will re-subscribe");
     }
   });
   return client;

@@ -1,0 +1,11 @@
+.git
+.cursor
+.nx
+node_modules
+**/node_modules
+**/.next
+**/out
+**/.env*
+loadtest
+**/logs
+*.md

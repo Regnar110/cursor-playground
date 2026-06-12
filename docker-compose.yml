@@ -1,3 +1,24 @@
+# Pelne srodowisko: Redis + 8 instancji tmeNext (wspolny obraz = wspolny artefakt
+# .next) + kontener k6 (tmeNext-K6Test) w tej samej sieci.
+#
+#   docker compose up -d --build          # redis + 8x tmeNext
+#   nx run tmeNext-K6Test:load            # testy k6 (kontener, profil "k6")
+
+x-tme-next: &tme-next
+  image: tme-next:local
+  environment:
+    REDIS_URL: redis://redis:6379
+  depends_on:
+    redis:
+      condition: service_healthy
+  healthcheck:
+    test: ["CMD", "wget", "-qO/dev/null", "http://127.0.0.1:3000/pl/pl"]
+    interval: 10s
+    timeout: 5s
+    retries: 10
+    start_period: 15s
+  restart: unless-stopped
+
 services:
   redis:
     image: redis:7-alpine
@@ -25,6 +46,68 @@ services:
     depends_on:
       redis:
         condition: service_healthy
+
+  # Obraz budowany raz (tme-next-1), pozostale instancje reuzywaja tme-next:local.
+  tme-next-1:
+    <<: *tme-next
+    build:
+      context: .
+      dockerfile: apps/tmeNext/Dockerfile
+    ports:
+      - "3000:3000"
+
+  tme-next-2:
+    <<: *tme-next
+    ports:
+      - "3001:3000"
+
+  tme-next-3:
+    <<: *tme-next
+    ports:
+      - "3002:3000"
+
+  tme-next-4:
+    <<: *tme-next
+    ports:
+      - "3003:3000"
+
+  tme-next-5:
+    <<: *tme-next
+    ports:
+      - "3004:3000"
+
+  tme-next-6:
+    <<: *tme-next
+    ports:
+      - "3005:3000"
+
+  tme-next-7:
+    <<: *tme-next
+    ports:
+      - "3006:3000"
+
+  tme-next-8:
+    <<: *tme-next
+    ports:
+      - "3007:3000"
+
+  # Testy obciazeniowe - nie startuje przy `up`, tylko przez `docker compose run k6 ...`
+  k6:
+    build:
+      context: apps/tmeNext-K6Test
+    profiles: ["k6"]
+    environment:
+      INSTANCES: "8"
+      HOST_TEMPLATE: "tme-next-{i}:3000"
+    depends_on:
+      tme-next-1: { condition: service_healthy }
+      tme-next-2: { condition: service_healthy }
+      tme-next-3: { condition: service_healthy }
+      tme-next-4: { condition: service_healthy }
+      tme-next-5: { condition: service_healthy }
+      tme-next-6: { condition: service_healthy }
+      tme-next-7: { condition: service_healthy }
+      tme-next-8: { condition: service_healthy }
 
 volumes:
   redis-data:

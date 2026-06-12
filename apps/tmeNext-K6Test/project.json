@@ -1,0 +1,24 @@
+{
+  "$schema": "../../node_modules/nx/schemas/project-schema.json",
+  "name": "tmeNext-K6Test",
+  "projectType": "application",
+  "sourceRoot": "apps/tmeNext-K6Test/scenarios",
+  "targets": {
+    "build": {
+      "command": "docker compose build k6",
+      "options": { "cwd": "{workspaceRoot}" }
+    },
+    "load": {
+      "command": "docker compose run --rm k6 run /scenarios/cache-load.js",
+      "options": { "cwd": "{workspaceRoot}" }
+    },
+    "single-flight": {
+      "command": "docker compose run --rm k6 run /scenarios/single-flight.js",
+      "options": { "cwd": "{workspaceRoot}" }
+    },
+    "invalidation": {
+      "command": "docker compose run --rm k6 run /scenarios/invalidation.js",
+      "options": { "cwd": "{workspaceRoot}" }
+    }
+  }
+}

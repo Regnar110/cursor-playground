@@ -1,9 +1,11 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
+  // Wymagane dla obrazu Docker: minimalny serwer + przesledzone zaleznosci
+  output: "standalone",
   cacheComponents: true,
   cacheHandlers: {
-    remote: require.resolve("./cache-handlers/remote-handler.js"),
+    remote: require.resolve("./cache-handlers/remote-handler.mjs"),
   },
   images: {
     remotePatterns: [

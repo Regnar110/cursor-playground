@@ -1,36 +1,43 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# tme-monorepo (Nx)
 
-## Getting Started
+Monorepo Nx z dwiema aplikacjami uruchamianymi w kontenerach:
 
-First, run the development server:
+| Projekt | Ścieżka | Rola |
+|---|---|---|
+| `tmeNext` | `apps/tmeNext` | Next.js 16 (Cache Components, `use cache: remote` → LRU + Redis + Pub/Sub) |
+| `tmeNext-K6Test` | `apps/tmeNext-K6Test` | Testy obciążeniowe k6 (obraz `grafana/k6` ze scenariuszami) |
+
+Architektura docelowa: **wiele instancji Next.js z jednego artefaktu `.next`**
+(jeden obraz `tme-next:local`, 8 kontenerów) + wspólny Redis jako cache L2.
+Szczegóły cachowania: `apps/tmeNext/docs/CACHING.md`.
+
+## Szybki start
 
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+npm install
+docker compose up -d --build   # redis + redisinsight + 8x tmeNext (porty 3000-3007)
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+- Aplikacja: http://localhost:3000 … :3007 (każdy port = osobna instancja)
+- Redis Insight: http://localhost:5540
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## Komendy Nx
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+```bash
+npx nx dev tmeNext                       # dev server (host, wymaga redis:6379)
+npx nx build tmeNext                     # build produkcyjny
+npx nx run tmeNext-K6Test:build          # build obrazu k6
+npx nx run tmeNext-K6Test:load           # ogólne obciążenie (40 VU, 8 instancji)
+npx nx run tmeNext-K6Test:single-flight  # thundering herd na zimny URL
+npx nx run tmeNext-K6Test:invalidation   # propagacja invalidacji między instancjami
+```
 
-## Learn More
+Testy k6 działają **w kontenerze**, w tej samej sieci Docker co instancje —
+celują w hostnames serwisów (`tme-next-1:3000` … `tme-next-8:3000`), konfigurowalne
+przez env `INSTANCES` i `HOST_TEMPLATE`. Parametry scenariuszy (np. zimny target):
 
-To learn more about Next.js, take a look at the following resources:
+```bash
+docker compose run --rm -e TARGET=br/pt/cache-lab k6 run /scenarios/single-flight.js
+```
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
-
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+Opis scenariuszy i oczekiwanych wyników: `apps/tmeNext-K6Test/README.md`.
