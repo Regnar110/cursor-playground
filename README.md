@@ -10,6 +10,7 @@ Monorepo Nx z dwiema aplikacjami uruchamianymi w kontenerach:
 Architektura docelowa: **wiele instancji Next.js z jednego artefaktu `.next`**
 (jeden obraz `tme-next:local`, 8 kontenerów) + wspólny Redis jako cache L2.
 Szczegóły cachowania: `apps/tmeNext/docs/CACHING.md`.
+Uruchamianie aplikacji i testów: [HOW_TO_RUN.md](./HOW_TO_RUN.md).
 
 ## Szybki start
 

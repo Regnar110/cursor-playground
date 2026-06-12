@@ -4,7 +4,9 @@ Next.js 16 with **Cache Components** + a custom `use cache: remote` handler
 (`cache-handlers/remote-handler.mjs`): in-process LRU → shared Redis → Pub/Sub.
 Designed for **multiple instances running from a single `.next` artifact** (in our case:
 8 containers built from one image). Rationale and considered alternatives:
-[ADR-0001](./adr/0001-zdalny-cache-redis.md).
+[ADR-0001](./adr/0001-zdalny-cache-redis.md). Redis/ioredis gotchas behind the
+implementation details: [REDIS-NUANCES.md](./REDIS-NUANCES.md). Deep dive on tag
+invalidation timestamps (backstop, examples, TTL): [INVALIDATION-TIMESTAMPS.md](./INVALIDATION-TIMESTAMPS.md).
 
 ---
 
