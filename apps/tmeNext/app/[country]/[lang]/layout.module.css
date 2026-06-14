@@ -1,18 +1,18 @@
 .shell {
-  margin: var(--space-0) auto;
+  margin: 0 auto;
   display: flex;
   width: 100%;
-  max-width: var(--max-w-shell);
+  max-width: 64rem;
   flex: 1;
   flex-direction: column;
-  gap: var(--space-8);
-  padding: var(--space-10) var(--space-4);
+  gap: 2rem;
+  padding: 2.5rem 1rem;
 }
 
 .header {
   display: flex;
   flex-direction: column;
-  gap: var(--space-4);
+  gap: 1rem;
 }
 
 .headerRow {
@@ -20,41 +20,41 @@
   flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
-  gap: var(--space-4);
+  gap: 1rem;
 }
 
 .eyebrow {
-  margin: var(--space-0);
-  font-size: var(--text-sm);
-  font-weight: var(--weight-medium);
-  color: var(--accent-emerald);
+  margin: 0;
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: #059669;
 }
 
 .title {
-  margin: var(--space-1) var(--space-0) var(--space-0);
-  font-size: var(--text-3xl);
-  font-weight: var(--weight-bold);
-  letter-spacing: var(--tracking-tight);
+  margin: 0.25rem 0 0;
+  font-size: 1.875rem;
+  font-weight: 700;
+  letter-spacing: -0.025em;
 }
 
 .subtitle {
-  margin: var(--space-2) var(--space-0) var(--space-0);
-  max-width: var(--max-w-prose);
-  font-size: var(--text-sm);
-  color: var(--text-secondary);
+  margin: 0.5rem 0 0;
+  max-width: 42rem;
+  font-size: 0.875rem;
+  color: #52525b;
 }
 
 .localeCard {
-  border-radius: var(--radius-xl);
-  border: var(--border-width) solid var(--border);
-  background: var(--bg-surface);
-  padding: var(--space-3) var(--space-4);
-  font-size: var(--text-sm);
+  border-radius: 0.75rem;
+  border: 0.0625rem solid #e4e4e7;
+  background: #ffffff;
+  padding: 0.75rem 1rem;
+  font-size: 0.875rem;
 }
 
 .localeLang {
-  margin: var(--space-0);
-  color: var(--text-muted);
+  margin: 0;
+  color: #71717a;
 }
 
 .main {

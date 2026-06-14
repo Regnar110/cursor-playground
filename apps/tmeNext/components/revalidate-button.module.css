@@ -1,32 +1,32 @@
 .button {
   border: none;
-  border-radius: var(--radius-lg);
-  background: var(--text-primary);
-  padding: var(--space-2) var(--space-4);
-  font-size: var(--text-sm);
-  font-weight: var(--weight-medium);
-  color: var(--bg-page);
+  border-radius: 0.75rem;
+  background: #18181b;
+  padding: 0.5rem 1rem;
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: #fafafa;
   cursor: pointer;
-  transition: opacity var(--duration-fast), background var(--duration-fast);
+  transition: opacity 0.15s, background 0.15s;
 }
 
 .button:hover:not(:disabled) {
-  opacity: var(--opacity-hover);
+  opacity: 0.85;
 }
 
 .button:disabled {
-  opacity: var(--opacity-disabled);
+  opacity: 0.5;
   cursor: not-allowed;
 }
 
 @media (prefers-color-scheme: dark) {
   .button {
-    background: var(--bg-inverse);
-    color: var(--text-on-inverse);
+    background: #f4f4f5;
+    color: #18181b;
   }
 
   .button:hover:not(:disabled) {
-    background: var(--bg-inverse-hover);
+    background: #d4d4d8;
     opacity: 1;
   }
 }

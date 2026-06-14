@@ -1,8 +1,8 @@
 .list {
   display: grid;
-  gap: var(--space-4);
-  margin: var(--space-0);
-  padding: var(--space-0);
+  gap: 1rem;
+  margin: 0;
+  padding: 0;
   list-style: none;
 }
 
@@ -14,36 +14,36 @@
 
 .item {
   display: flex;
-  gap: var(--space-4);
-  border-radius: var(--radius-xl);
-  border: var(--border-width) solid var(--border);
-  background: var(--bg-surface);
-  padding: var(--space-4);
-  box-shadow: var(--shadow-sm);
+  gap: 1rem;
+  border-radius: 0.75rem;
+  border: 0.0625rem solid #e4e4e7;
+  background: #ffffff;
+  padding: 1rem;
+  box-shadow: 0 0.0625rem 0.125rem rgb(0 0 0 / 0.05);
 }
 
 .avatar {
-  width: var(--size-avatar);
-  height: var(--size-avatar);
-  border-radius: var(--radius-full);
+  width: 4rem;
+  height: 4rem;
+  border-radius: 624.9375rem;
   object-fit: cover;
   flex-shrink: 0;
 }
 
 .name {
-  margin: var(--space-0);
-  font-weight: var(--weight-semibold);
-  color: var(--text-primary);
+  margin: 0;
+  font-weight: 600;
+  color: #18181b;
 }
 
 .email {
-  margin: var(--space-0);
-  font-size: var(--text-sm);
-  color: var(--text-secondary);
+  margin: 0;
+  font-size: 0.875rem;
+  color: #52525b;
 }
 
 .company {
-  margin: var(--space-0);
-  font-size: var(--text-sm);
-  color: var(--text-muted);
+  margin: 0;
+  font-size: 0.875rem;
+  color: #71717a;
 }
