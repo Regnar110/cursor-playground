@@ -1,11 +1,17 @@
 .main {
+  --bg-page: #fafafa;
+  --bg-surface: #ffffff;
+  --text-primary: #18181b;
+
   min-height: 100vh;
-  background: #ffffff;
-  color: #18181b;
+  background: var(--bg-surface);
+  color: var(--text-primary);
 }
 
 @media (prefers-color-scheme: dark) {
   .main {
-    background: #09090b;
+    --bg-page: #09090b;
+    --bg-surface: #09090b;
+    --text-primary: #fafafa;
   }
 }
