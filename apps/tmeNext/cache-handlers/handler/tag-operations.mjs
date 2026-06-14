@@ -12,7 +12,12 @@ import { getRedis } from "./redis-client.mjs";
 import { redisIndexKey, redisRevalidatedAtKey } from "./redis-keys.mjs";
 import { localTagTimestamps } from "./state.mjs";
 
-/** @returns {Promise<void>} */
+/**
+ * Syncs local invalidation timestamps with Redis — called by Next.js before each request.
+ * Backstop for instances that missed Pub/Sub. Also trims expired meta:revalidated-at:* tags.
+ *
+ * @returns {Promise<void>}
+ */
 export async function refreshTags() {
   try {
     const redis = await getRedis();
@@ -60,17 +65,29 @@ export async function refreshTags() {
   }
 }
 
-/** @param {string[]} tags */
+/**
+ * Returns the latest known invalidation timestamp for the given tags
+ * (Next.js compares it with the entry timestamp).
+ *
+ * @param {string[]} tags
+ * @returns {Promise<number>} Timestamp in ms (0 = never invalidated).
+ */
 export async function getExpiration(tags) {
   const timestamps = tags.map((tag) => localTagTimestamps.get(tag) ?? 0);
   return Math.max(...timestamps, 0);
 }
 
 /**
- * @param {string[]} tags
- * @param {object} _durations
+ * Tag invalidation (updateTag / revalidateTag):
+ * 1. Local: timestamps + L1 cleanup
+ * 2. Redis (pipeline): invalidation timestamp with TTL, tag registry, delete indexes and entries
+ * 3. Pub/Sub: other instances clean up their L1
+ *
+ * @param {string[]} tags - Tags to invalidate.
+ * @param {object} durations - Time profiles from Next.js (unused — hard delete).
+ * @returns {Promise<void>}
  */
-export async function updateTags(tags, _durations) {
+export async function updateTags(tags, durations) {
   const now = Date.now();
 
   for (const tag of tags) {

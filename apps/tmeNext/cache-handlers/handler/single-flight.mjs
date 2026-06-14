@@ -12,9 +12,13 @@ import { instanceId } from "./state.mjs";
 import { isEntryFresh } from "./stale.mjs";
 
 /**
+ * Polls until the instance holding the lock writes the result to Redis.
+ * Stops early when the lock disappears (render crashed or finished).
+ *
  * @param {import("ioredis").Redis} redis
- * @param {string} cacheKey
+ * @param {string} cacheKey - Raw Next.js cache key.
  * @param {string[]} softTags
+ * @returns {Promise<object | undefined>} Fresh entry or undefined (timeout / no result).
  */
 export async function waitForRemoteEntry(redis, cacheKey, softTags) {
   cacheDebug.log(
@@ -58,8 +62,12 @@ export async function waitForRemoteEntry(redis, cacheKey, softTags) {
 }
 
 /**
+ * Tries to acquire single-flight lock (SET NX with TTL). Lock value = instanceId
+ * so releaseRenderLock can verify ownership.
+ *
  * @param {import("ioredis").Redis} redis
- * @param {string} cacheKey
+ * @param {string} cacheKey - Raw Next.js cache key.
+ * @returns {Promise<boolean>} true = lock acquired, this instance renders.
  */
 export async function tryAcquireRenderLock(redis, cacheKey) {
   const result = await redis.set(redisLockKey(cacheKey), instanceId, "EX", LOCK_TTL_SECONDS, "NX");
@@ -67,8 +75,11 @@ export async function tryAcquireRenderLock(redis, cacheKey) {
 }
 
 /**
+ * Releases lock ONLY if this instance still owns it (compare-and-delete).
+ *
  * @param {import("ioredis").Redis} redis
- * @param {string} cacheKey
+ * @param {string} cacheKey - Raw Next.js cache key.
+ * @returns {Promise<void>}
  */
 export async function releaseRenderLock(redis, cacheKey) {
   try {

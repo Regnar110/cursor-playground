@@ -12,7 +12,10 @@ import {
 } from "./state.mjs";
 
 /**
- * @param {{tags?: string[], keys?: string[]}} payload
+ * Broadcasts invalidation to other instances (clear their L1).
+ *
+ * @param {{tags?: string[], keys?: string[]}} payload - Tags and/or entry keys to remove from LRU.
+ * @returns {Promise<void>}
  */
 export async function publishInvalidation(payload) {
   try {
@@ -26,7 +29,12 @@ export async function publishInvalidation(payload) {
   }
 }
 
-/** @returns {Promise<void>} */
+/**
+ * Starts Pub/Sub subscriber (once) that clears L1 after invalidations from other instances.
+ * Requires a separate connection — a subscriber client cannot run other commands.
+ *
+ * @returns {Promise<void>}
+ */
 export async function setupSubscriber() {
   if (isBuildPhase || !process.env.REDIS_HOST || (redisSubClient && redisSubClient.status === "ready")) {
     return;

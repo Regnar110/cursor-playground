@@ -1,21 +1,22 @@
 /**
  * Remote cache handler for Next.js 16 (`use cache: remote`).
  *
- * Entry point — implementation lives in ./handler/*:
- * - config.mjs         env + constants
- * - redis-keys.mjs     key encoding (":" → ";", lock/index/meta prefixes)
- * - entry.mjs          v8 serialize/deserialize, streams
- * - state.mjs          per-process singleton (LRU, Redis refs, tag timestamps)
- * - stale.mjs          expiry + tag invalidation checks
- * - redis-client.mjs   ioredis lifecycle + cooldown fallback
- * - l1-cache.mjs       LRU ops + debug mirror
- * - pubsub.mjs         cross-instance L1 invalidation
- * - single-flight.mjs  render lock acquire/wait/release
- * - tag-operations.mjs refreshTags / updateTags / getExpiration
- * - create-handler.mjs get / set orchestration
- *
  * Architecture:
- * - L1: in-process LRU → L2: Redis → single-flight lock on miss
- * - Pub/Sub + meta:revalidated-at:* for invalidation backstop
+ * - L1: in-process LRU cache with short TTL — limits round-trips to Redis on hot load
+ * - L2: Redis — shared across Next.js application instances
+ * - Pub/Sub — invalidates L1 cache entries across all instances on invalidation
+ * - Single-flight lock — on cache MISS only one instance renders, rest wait for result
+ * - Tag timestamps (meta:revalidated-at:*) — persistent backstop when an instance
+ *   misses a Pub/Sub message (no connection, Redis restart, etc.)
+ *
+ * Redis key layout (Redis Insight groups by ":"):
+ *
+ * {cacheKey with ; not :}                   — payload; Next.js key with ":" → ";"
+ * lock:{cacheKey with ;}                    — single-flight lock (temporary, owner-checked)
+ * index:data:posts:pl:pl                    — SET of encoded cache keys; index:data / index:ui tree
+ * meta:revalidated-at:data:posts:pl:pl      — tag invalidation timestamp (TTL = TAG_META_TTL_SECONDS)
+ * meta:revalidated-tags                     — SET of tag names (trimmed in refreshTags)
+ *
+ * Implementation lives in ./handler/*
  */
 export { default } from "./handler/create-handler.mjs";

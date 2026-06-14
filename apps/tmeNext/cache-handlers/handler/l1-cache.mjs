@@ -23,7 +23,10 @@ export function debugEntryFields(entry, entryKey, softTags = []) {
   };
 }
 
-/** @param {string} entryKey @param {object} entry */
+/**
+ * @param {string} entryKey
+ * @param {object} entry
+ */
 async function syncL1EntryToRedis(entryKey, entry) {
   if (!cacheDebug.isDebugEnabled()) return;
   const redis = await getRedis();
@@ -60,7 +63,11 @@ export function lruDeleteAndSync(entryKey) {
   void syncL1RemoveFromRedis(entryKey).catch(() => {});
 }
 
-/** @param {string[]} tags */
+/**
+ * Removes from L1 all entries tagged with any of the given tags.
+ *
+ * @param {string[]} tags
+ */
 export function invalidateLruByTags(tags) {
   const keysToDelete = [];
 

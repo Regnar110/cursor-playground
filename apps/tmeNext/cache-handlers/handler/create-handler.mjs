@@ -27,7 +27,14 @@ import { getExpiration, refreshTags, updateTags } from "./tag-operations.mjs";
 
 registerDebugHooks();
 
-/** @param {string} cacheKey @param {string[]} softTags */
+/**
+ * Read entry: L1 (LRU) → L2 (Redis) → single-flight (wait for another instance
+ * or acquire lock and return undefined so Next.js renders and calls set()).
+ *
+ * @param {string} cacheKey - Cache key from Next.js.
+ * @param {string[]} softTags - Soft path tags (revalidatePath).
+ * @returns {Promise<object | undefined>} Cache entry or undefined (miss).
+ */
 async function get(cacheKey, softTags) {
   await setupSubscriber();
 
@@ -145,7 +152,14 @@ async function get(cacheKey, softTags) {
   }
 }
 
-/** @param {string} cacheKey @param {Promise<object>} pendingEntry */
+/**
+ * Write entry: LRU + Redis (pipeline: payload with TTL, sadd to tag indexes,
+ * extend index TTL). Finally releases this instance's single-flight lock.
+ *
+ * @param {string} cacheKey - Raw Next.js cache key.
+ * @param {Promise<object>} pendingEntry - Entry (value as ReadableStream).
+ * @returns {Promise<void>}
+ */
 async function set(cacheKey, pendingEntry) {
   let resolvePending;
   const pendingPromise = new Promise((resolve) => {
@@ -220,6 +234,7 @@ async function set(cacheKey, pendingEntry) {
   }
 }
 
+/** Merged debug view (local + Redis sync from all workers in this container). */
 async function getDebugPayload() {
   return cacheDebug.buildDebugPayload({
     getRedis,

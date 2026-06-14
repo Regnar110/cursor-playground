@@ -1,6 +1,12 @@
 import v8 from "node:v8";
 
-/** @param {string[]} tags */
+/**
+ * Extracts metadata (layer / resource / locale) from entry tags for the `_meta` field
+ * in the payload — easier debugging in Redis Insight.
+ *
+ * @param {string[]} tags - Cache entry tags.
+ * @returns {{layer: string, resource: string, locale: string}} Descriptive metadata.
+ */
 export function parseTagsMeta(tags) {
   const primary =
     tags?.find((t) => t.includes(":") && t.split(":").length >= 4) ?? tags?.[0] ?? "";
@@ -13,7 +19,12 @@ export function parseTagsMeta(tags) {
   };
 }
 
-/** @param {ReadableStream} stream */
+/**
+ * Reads entire ReadableStream into one Buffer (entry payload before writing to Redis).
+ *
+ * @param {ReadableStream} stream
+ * @returns {Promise<Buffer>}
+ */
 export async function readStreamToBuffer(stream) {
   const reader = stream.getReader();
   const chunks = [];
@@ -31,7 +42,12 @@ export async function readStreamToBuffer(stream) {
   return Buffer.concat(chunks);
 }
 
-/** @param {Buffer} buffer */
+/**
+ * Wraps a Buffer in a one-shot ReadableStream (return format required by Next.js).
+ *
+ * @param {Buffer} buffer
+ * @returns {ReadableStream}
+ */
 export function bufferToStream(buffer) {
   return new ReadableStream({
     start(controller) {
@@ -41,7 +57,13 @@ export function bufferToStream(buffer) {
   });
 }
 
-/** @param {Buffer} raw */
+/**
+ * Deserializes a Redis entry (v8 binary) into a Next.js structure.
+ * `_buffer`/`_size` are internal (LRU + cloneEntryForReturn) and are not passed to Next.js.
+ *
+ * @param {Buffer} raw - Raw bytes from redis.getBuffer().
+ * @returns {object} Cache entry with value as ReadableStream.
+ */
 export function deserializeEntry(raw) {
   const serialized = Buffer.isBuffer(raw) ? raw : Buffer.from(raw);
   const parsed = v8.deserialize(serialized);
@@ -59,7 +81,17 @@ export function deserializeEntry(raw) {
   };
 }
 
-/** @param {object} entry @param {Buffer} buffer */
+/**
+ * Serializes entry to v8 binary with `_meta` (layer/resource/locale/tags/createdAt)
+ * for easier inspection in Redis Insight.
+ *
+ * Production note: v8.serialize format is tied to Node version — all instances must
+ * run the same runtime (one .next artifact assumes this).
+ *
+ * @param {object} entry - Cache entry from Next.js.
+ * @param {Buffer} buffer - Gathered entry payload.
+ * @returns {Buffer} Bytes to write to Redis.
+ */
 export function serializeEntry(entry, buffer) {
   const meta = parseTagsMeta(entry.tags);
   return v8.serialize({
@@ -77,7 +109,13 @@ export function serializeEntry(entry, buffer) {
   });
 }
 
-/** @param {object} entry */
+/**
+ * Returns a copy of the entry with a fresh ReadableStream — streams are one-shot,
+ * so each return to Next.js must get a new one.
+ *
+ * @param {object} entry - Entry with `_buffer` (from LRU or after deserialization).
+ * @returns {object} Entry ready to return from get().
+ */
 export function cloneEntryForReturn(entry) {
   const buffer = entry._buffer;
   if (!buffer) {
