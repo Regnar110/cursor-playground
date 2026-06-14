@@ -1,0 +1,32 @@
+.button {
+  border: none;
+  border-radius: var(--radius-lg);
+  background: var(--text-primary);
+  padding: var(--space-2) var(--space-4);
+  font-size: var(--text-sm);
+  font-weight: var(--weight-medium);
+  color: var(--bg-page);
+  cursor: pointer;
+  transition: opacity var(--duration-fast), background var(--duration-fast);
+}
+
+.button:hover:not(:disabled) {
+  opacity: var(--opacity-hover);
+}
+
+.button:disabled {
+  opacity: var(--opacity-disabled);
+  cursor: not-allowed;
+}
+
+@media (prefers-color-scheme: dark) {
+  .button {
+    background: var(--bg-inverse);
+    color: var(--text-on-inverse);
+  }
+
+  .button:hover:not(:disabled) {
+    background: var(--bg-inverse-hover);
+    opacity: 1;
+  }
+}

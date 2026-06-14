@@ -1,0 +1,11 @@
+.main {
+  min-height: 100vh;
+  background: var(--bg-surface);
+  color: var(--text-primary);
+}
+
+@media (prefers-color-scheme: dark) {
+  .main {
+    background: var(--bg-page);
+  }
+}

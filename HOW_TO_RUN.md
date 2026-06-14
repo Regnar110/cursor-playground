@@ -77,7 +77,21 @@ docker compose up -d redis redisinsight
 cp apps/tmeNext/.env.example apps/tmeNext/.env
 ```
 
-Plik `.env` ustawia `REDIS_URL=redis://localhost:6379`. Bez tego handler cache działa tylko na lokalnym LRU (bez Redis L2 i Pub/Sub).
+Plik `.env` ustawia połączenie z Redis (`REDIS_HOST`, `REDIS_PORT`, …). Bez `REDIS_HOST` handler cache działa tylko na lokalnym LRU (bez Redis L2 i Pub/Sub).
+
+Pełna lista zmiennych (z domyślnymi wartościami) jest w `apps/tmeNext/.env.example`:
+
+| Zmienna | Domyślnie | Opis |
+|---|---|---|
+| `REDIS_HOST` | — (wymagane) | host Redisa |
+| `REDIS_PORT` | `6379` | port |
+| `REDIS_DB` | `0` | numer bazy |
+| `REDIS_PASSWORD` | — | opcjonalne hasło |
+| `SINGLE_FLIGHT_LOCK_TTL` | `30` | TTL locka single-flight (s) |
+| `SINGLE_FLIGHT_POLLING_MS` | `100` | odstęp pollingu przy czekaniu (ms) |
+| `SINGLE_FLIGHT_ATTEMPTS` | `50` | max prób pollingu |
+| `TAG_META_TTL_SECONDS` | `604800` | TTL `meta:revalidated-at:*` (7 dni) |
+| `REMOTE_CACHE_LRU_*` | patrz `.env.example` | parametry L1 LRU |
 
 ### Krok 3: Dev server
 
@@ -93,15 +107,10 @@ Aplikacja: http://localhost:3000
 
 ```bash
 npx nx build tmeNext
-REDIS_URL=redis://localhost:6379 npx nx start tmeNext
-```
-
-Na Windows (PowerShell):
-
-```powershell
-$env:REDIS_URL = "redis://localhost:6379"
 npx nx start tmeNext
 ```
+
+Na Windows (PowerShell) upewnij się, że `.env` jest skopiowany — Next.js ładuje go z `apps/tmeNext/.env`.
 
 ---
 
@@ -226,3 +235,53 @@ docker compose up -d --build          # po zmianach w kodzie
 | Po awarii Redis cache nie wraca | Handler ma 30 s cooldown; poczekaj lub zrestartuj instancję |
 
 Dokumentacja cache: `apps/tmeNext/docs/CACHING.md`.
+
+---
+
+## 8. Debug mode cache (opcjonalny)
+
+Włączany **tylko** gdy ustawisz `REMOTE_CACHE_DEBUG=<tajny-token>` (np. w `apps/tmeNext/.env` lub w `docker-compose`).
+
+Bez tej zmiennej: brak logów debug, endpointy zwracają **404** (jakby nie istniały).
+
+### Co dostajesz
+
+| Kanał | URL / komenda | Opis |
+|---|---|---|
+| **Logi w terminalu** | `docker compose logs -f tme-next-1` | Czytelne bloki tekstu przy każdym GET/SET/invalidacji |
+| **Dashboard HTML** | http://localhost:3000/cache-debug?token=`<token>` | Live podgląd L1, timestampów tagów, timeline zdarzeń |
+| **JSON** | `/api/cache-debug?token=`<token>`` | Snapshot + ostatnie zdarzenia |
+| **Plain text** | ten sam URL + nagłówek `Accept: text/plain` | Raport do `curl` / wklejenia |
+
+Każda instancja ma **własny** debug (osobna pamięć Node). Przy nginx sprawdź nagłówek `X-Upstream` albo wejdź bezpośrednio na port 3000–3007.
+
+### Przykład (dev)
+
+```bash
+# w apps/tmeNext/.env:
+REMOTE_CACHE_DEBUG=local-dev-secret
+
+npx nx dev tmeNext
+# otwórz http://localhost:3000/pl/pl/posts  (generuje zdarzenia)
+# potem http://localhost:3000/cache-debug?token=local-dev-secret
+```
+
+### Przykład (Docker)
+
+```yaml
+# docker-compose.yml → sekcja x-tme-next → environment:
+REMOTE_CACHE_DEBUG: "local-dev-secret"
+```
+
+Po rebuild: `http://localhost:3000/cache-debug?token=local-dev-secret` (instancja 1).
+
+### Co widać w logach (przykład)
+
+```text
+┌─ cache GET ─ HIT ─────────────────────────
+│  Returned fresh entry from L1 (in-process LRU)
+│  layer: L1
+│  tags: data:posts:pl:pl
+│  age: 2.3 s
+└────────────────────────────────────────
+```

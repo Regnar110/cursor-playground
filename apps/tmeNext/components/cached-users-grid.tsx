@@ -3,6 +3,7 @@ import { cacheLife, cacheTag } from "next/cache";
 import { uiTag } from "@/lib/cache-tags";
 import { getLabels, type LangCode } from "@/lib/i18n";
 import { getUsers } from "@/lib/data/users";
+import styles from "./cached-users-grid.module.css";
 
 type Props = {
   country: string;
@@ -18,27 +19,24 @@ export async function CachedUsersGrid({ country, lang }: Props) {
   const data = await getUsers(country, lang);
 
   return (
-    <ul className="grid gap-4 sm:grid-cols-2">
+    <ul className={styles.list}>
       {data.users.map((user) => (
-        <li
-          key={user.id}
-          className="flex gap-4 rounded-xl border border-zinc-200 bg-white p-4 shadow-sm dark:border-zinc-800 dark:bg-zinc-900"
-        >
+        <li key={user.id} className={styles.item}>
           <Image
             src={user.image}
             alt={`${user.firstName} ${user.lastName}`}
             width={64}
             height={64}
-            className="h-16 w-16 rounded-full object-cover"
+            className={styles.avatar}
           />
           <div>
-            <h3 className="font-semibold text-zinc-900 dark:text-zinc-50">
+            <h3 className={styles.name}>
               {user.firstName} {user.lastName}
             </h3>
-            <p className="text-sm text-zinc-600 dark:text-zinc-400">
+            <p className={styles.email}>
               {labels.email}: {user.email}
             </p>
-            <p className="text-sm text-zinc-500">
+            <p className={styles.company}>
               {labels.company}: {user.company.name}
             </p>
           </div>

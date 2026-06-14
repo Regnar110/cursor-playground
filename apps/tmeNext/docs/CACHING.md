@@ -284,9 +284,12 @@ Interactive demo of all the APIs: the `/{country}/{lang}/cache-lab` page.
 # full stack: redis + redisinsight + 8x tmeNext (ports 3000-3007)
 docker compose up -d --build
 
-# dev on the host (requires redis on localhost:6379 and a free port 3000)
+# dev on the host (requires Redis on localhost:6379 and apps/tmeNext/.env with REDIS_HOST)
 npx nx dev tmeNext
 ```
+
+Copy `apps/tmeNext/.env.example` → `.env` — handler reads `REDIS_HOST`, `REDIS_PORT`, `REDIS_DB`
+(and optional tuning vars for LRU, single-flight, tag meta TTL).
 
 | Service | URL |
 |---|---|

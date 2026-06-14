@@ -10,6 +10,7 @@ import {
   type CountryCode,
   type LangCode,
 } from "@/lib/i18n";
+import styles from "./layout.module.css";
 
 type Props = {
   children: React.ReactNode;
@@ -32,28 +33,24 @@ export default async function LocaleLayout({ children, params }: Props) {
   const labels = getLabels(lang as LangCode);
 
   return (
-    <div className="mx-auto flex w-full max-w-5xl flex-1 flex-col gap-8 px-4 py-10">
-      <header className="space-y-4">
-        <div className="flex flex-wrap items-center justify-between gap-4">
+    <div className={styles.shell}>
+      <header className={styles.header}>
+        <div className={styles.headerRow}>
           <div>
-            <p className="text-sm font-medium text-emerald-600 dark:text-emerald-400">
-              Next.js 16.2 · cacheComponents · use cache: remote
-            </p>
-            <h1 className="mt-1 text-3xl font-bold tracking-tight">{labels.playground}</h1>
-            <p className="mt-2 max-w-2xl text-sm text-zinc-600 dark:text-zinc-400">
-              {labels.cacheInfo}
-            </p>
+            <p className={styles.eyebrow}>Next.js 16.2 · cacheComponents · use cache: remote</p>
+            <h1 className={styles.title}>{labels.playground}</h1>
+            <p className={styles.subtitle}>{labels.cacheInfo}</p>
           </div>
-          <div className="rounded-xl border border-zinc-200 bg-white px-4 py-3 text-sm dark:border-zinc-800 dark:bg-zinc-900">
+          <div className={styles.localeCard}>
             <p>
               {countryData.flag} {countryData.name}
             </p>
-            <p className="text-zinc-500">{langData.name}</p>
+            <p className={styles.localeLang}>{langData.name}</p>
           </div>
         </div>
         <SiteNav country={country as CountryCode} lang={lang as LangCode} />
       </header>
-      <main>{children}</main>
+      <main className={styles.main}>{children}</main>
     </div>
   );
 }

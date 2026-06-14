@@ -60,7 +60,11 @@ function seedRedisEntry(encodedKey, { payload = "remote", tags = [TAG], revalida
 }
 
 beforeEach(() => {
-  process.env.REDIS_URL = "redis://fake:6379";
+  process.env.REDIS_HOST = "fake";
+  process.env.REDIS_PORT = "6379";
+  process.env.REDIS_DB = "0";
+  delete process.env.REDIS_PASSWORD;
+  delete process.env.REMOTE_CACHE_DEBUG;
   delete process.env.NEXT_PHASE;
   handler = loadHandler();
   FakeRedis.reset();
@@ -100,7 +104,7 @@ describe("set + get", () => {
     await handler.set(CACHE_KEY, Promise.resolve(makeEntry()));
 
     const raw = v8.deserialize(FakeRedis.state.store.get(ENCODED_KEY));
-    expect(raw._meta).toMatchObject({ layer: "data", resource: "posts", scope: "pl:pl" });
+    expect(raw._meta).toMatchObject({ layer: "data", resource: "posts", locale: "pl/pl" });
   });
 
   test("tag bez scope (zasob globalny) dostaje _meta.scope = 'global'", async () => {
@@ -108,7 +112,7 @@ describe("set + get", () => {
     await handler.set(GLOBAL_KEY, Promise.resolve(makeEntry({ tags: ["data:config"] })));
 
     const raw = v8.deserialize(FakeRedis.state.store.get(GLOBAL_KEY.replace(/:/g, ";")));
-    expect(raw._meta).toMatchObject({ layer: "data", resource: "config", scope: "global" });
+    expect(raw._meta).toMatchObject({ layer: "data", resource: "config", locale: "global" });
     // indeks 1:1 dziala tak samo bez scope
     expect(Array.from(FakeRedis.state.sets.get("index:data:config"))).toEqual([
       GLOBAL_KEY.replace(/:/g, ";"),

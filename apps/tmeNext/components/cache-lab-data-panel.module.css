@@ -1,0 +1,71 @@
+.panel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  border-radius: var(--radius-xl);
+  border: var(--border-width-2) solid var(--accent-sky-border);
+  background: var(--accent-sky-bg);
+  padding: var(--space-5);
+}
+
+.header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.badge {
+  border-radius: var(--radius-full);
+  background: var(--accent-sky-badge);
+  padding: var(--space-0-5) var(--space-2-5);
+  font-size: var(--text-xs);
+  font-weight: var(--weight-semibold);
+  color: var(--text-on-accent);
+}
+
+.meta {
+  font-size: var(--text-xs);
+  color: var(--accent-sky-text);
+}
+
+.quote {
+  margin: var(--space-0);
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+}
+
+.author {
+  margin: var(--space-0);
+  font-size: var(--text-sm);
+  color: var(--text-muted);
+}
+
+.cell {
+  border-radius: var(--radius-lg);
+  background: var(--surface-overlay-70);
+  padding: var(--space-3);
+  font-size: var(--text-xs);
+}
+
+.cellLabel {
+  margin: var(--space-0);
+  font-weight: var(--weight-medium);
+  color: var(--text-muted);
+}
+
+.cellValue {
+  margin: var(--space-0-5) var(--space-0) var(--space-0);
+  font-family: var(--font-mono);
+}
+
+.grid {
+  display: grid;
+  gap: var(--space-2);
+}
+
+@media (min-width: 40rem) {
+  .grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}

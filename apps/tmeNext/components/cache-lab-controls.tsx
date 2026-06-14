@@ -11,6 +11,8 @@ import {
   type CacheLabActionResult,
 } from "@/app/actions/cache-lab";
 import { dataTag, uiTag } from "@/lib/cache-tags";
+import shared from "@/styles/shared.module.css";
+import styles from "./cache-lab-controls.module.css";
 
 type Props = {
   country: string;
@@ -47,8 +49,8 @@ export function CacheLabControls({ country, lang }: Props) {
   }
 
   return (
-    <div className="space-y-6">
-      <div className="grid gap-3 lg:grid-cols-2">
+    <div className={styles.root}>
+      <div className={shared.controlsGrid}>
         <ActionGroup title="updateTag() — natychmiast">
           <ActionButton
             disabled={pending}
@@ -89,16 +91,14 @@ export function CacheLabControls({ country, lang }: Props) {
         </ActionGroup>
       </div>
 
-      {pending && <p className="text-sm text-zinc-500">Wykonywanie akcji cache…</p>}
+      {pending && <p className={styles.pending}>Wykonywanie akcji cache…</p>}
 
       {result && (
-        <div className="rounded-xl border border-amber-300 bg-amber-50 p-4 text-sm dark:border-amber-800 dark:bg-amber-950/40">
-          <p className="font-semibold text-amber-900 dark:text-amber-200">{result.action}</p>
-          <p className="mt-1 text-amber-800 dark:text-amber-300">{result.message}</p>
+        <div className={styles.result}>
+          <p className={styles.resultTitle}>{result.action}</p>
+          <p className={styles.resultMessage}>{result.message}</p>
           {result.freshData && (
-            <pre className="mt-3 overflow-x-auto rounded-lg bg-white/80 p-3 text-xs dark:bg-zinc-900/80">
-              {JSON.stringify(result.freshData, null, 2)}
-            </pre>
+            <pre className={styles.resultPre}>{JSON.stringify(result.freshData, null, 2)}</pre>
           )}
         </div>
       )}
@@ -114,9 +114,9 @@ function ActionGroup({
   children: React.ReactNode;
 }) {
   return (
-    <div className="rounded-xl border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-900">
-      <h3 className="mb-3 text-sm font-semibold text-zinc-800 dark:text-zinc-200">{title}</h3>
-      <div className="space-y-2">{children}</div>
+    <div className={styles.group}>
+      <h3 className={styles.groupTitle}>{title}</h3>
+      <div className={styles.groupActions}>{children}</div>
     </div>
   );
 }
@@ -133,14 +133,9 @@ function ActionButton({
   onClick: () => void;
 }) {
   return (
-    <button
-      type="button"
-      disabled={disabled}
-      onClick={onClick}
-      className="w-full rounded-lg border border-zinc-200 px-3 py-2 text-left text-sm transition hover:bg-zinc-50 disabled:opacity-50 dark:border-zinc-700 dark:hover:bg-zinc-800"
-    >
-      <span className="font-medium">{label}</span>
-      <span className="mt-0.5 block text-xs text-zinc-500">{hint}</span>
+    <button type="button" disabled={disabled} onClick={onClick} className={styles.actionButton}>
+      <span className={styles.actionLabel}>{label}</span>
+      <span className={styles.actionHint}>{hint}</span>
     </button>
   );
 }

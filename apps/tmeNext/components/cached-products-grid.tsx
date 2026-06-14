@@ -3,6 +3,7 @@ import { cacheLife, cacheTag } from "next/cache";
 import { uiTag } from "@/lib/cache-tags";
 import { getLabels, type LangCode } from "@/lib/i18n";
 import { getProducts } from "@/lib/data/products";
+import styles from "./cached-products-grid.module.css";
 
 type Props = {
   country: string;
@@ -18,25 +19,20 @@ export async function CachedProductsGrid({ country, lang }: Props) {
   const data = await getProducts(country, lang);
 
   return (
-    <ul className="grid gap-4 sm:grid-cols-2">
+    <ul className={styles.list}>
       {data.products.map((product) => (
-        <li
-          key={product.id}
-          className="overflow-hidden rounded-xl border border-zinc-200 bg-white shadow-sm dark:border-zinc-800 dark:bg-zinc-900"
-        >
+        <li key={product.id} className={styles.item}>
           <Image
             src={product.thumbnail}
             alt={product.title}
             width={400}
             height={200}
-            className="h-40 w-full object-cover"
+            className={styles.thumbnail}
           />
-          <div className="p-4">
-            <h3 className="font-semibold text-zinc-900 dark:text-zinc-50">{product.title}</h3>
-            <p className="mt-1 line-clamp-2 text-sm text-zinc-600 dark:text-zinc-400">
-              {product.description}
-            </p>
-            <div className="mt-3 flex justify-between text-sm text-zinc-500">
+          <div className={styles.content}>
+            <h3 className={styles.title}>{product.title}</h3>
+            <p className={styles.description}>{product.description}</p>
+            <div className={styles.footer}>
               <span>
                 {labels.price}: ${product.price}
               </span>

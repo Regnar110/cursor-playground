@@ -1,0 +1,20 @@
+.nav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.link {
+  border-radius: var(--radius-lg);
+  border: var(--border-width) solid var(--border);
+  padding: var(--space-1-5) var(--space-3);
+  font-size: var(--text-sm);
+  font-weight: var(--weight-medium);
+  color: var(--text-secondary);
+  text-decoration: none;
+  transition: background var(--duration-fast);
+}
+
+.link:hover {
+  background: var(--bg-muted);
+}

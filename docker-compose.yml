@@ -7,7 +7,10 @@
 x-tme-next: &tme-next
   image: tme-next:local
   environment:
-    REDIS_URL: redis://redis:6379
+    REDIS_HOST: redis
+    REDIS_PORT: "6379"
+    REDIS_DB: "0"
+    REMOTE_CACHE_DEBUG: "local-dev-secret"
   depends_on:
     redis:
       condition: service_healthy
