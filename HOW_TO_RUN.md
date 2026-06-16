@@ -116,22 +116,17 @@ Na Windows (PowerShell) upewnij się, że `.env` jest skopiowany — Next.js ła
 
 ## 4. Testy jednostkowe (Jest)
 
-Testują `cache-handlers/remote-handler.mjs` z mockiem Redis (FakeRedis) — bez działającego Redisa.
+Testują pakiet `@tme/cache-handler` (TypeScript → `dist/`) z mockiem Redis (FakeRedis) — bez działającego Redisa.
 
 ```bash
-npx nx test tmeNext
+npm run test:cache-handler
+# lub
+npx nx test cache-handler
 ```
 
-Z katalogu aplikacji:
+Co jest pokryte: roundtrip cache, klucze Redis, single-flight, invalidacja, timestampy (`refreshTags`), fallback przy awarii, reconnect, telemetry debug (write-only).
 
-```bash
-cd apps/tmeNext
-npm test
-```
-
-Co jest pokryte: roundtrip cache, klucze Redis, single-flight, invalidacja, timestampy (`refreshTags`), fallback przy awarii, reconnect.
-
-Pliki testów: `apps/tmeNext/cache-handlers/__tests__/`.
+Pliki testów: `packages/cache-handler/__tests__/`.
 
 ### Lint
 
@@ -238,42 +233,37 @@ Dokumentacja cache: `apps/tmeNext/docs/CACHING.md`.
 
 ---
 
-## 8. Debug mode cache (opcjonalny)
+## 8. Debug telemetry cache (opcjonalny)
 
-Włączany **tylko** gdy ustawisz `REMOTE_CACHE_DEBUG=<tajny-token>` (np. w `apps/tmeNext/.env` lub w `docker-compose`).
+Włączany **tylko** gdy ustawisz `REMOTE_CACHE_DEBUG_ENABLED=true` (np. w `apps/tmeNext/.env` albo w `docker-compose`).
 
-Bez tej zmiennej: brak logów debug, endpointy zwracają **404** (jakby nie istniały).
+Bez tej zmiennej: brak logów debug i brak kluczy `meta:debug-*` w Redis.
 
 ### Co dostajesz
 
-| Kanał | URL / komenda | Opis |
-|---|---|---|
-| **Logi w terminalu** | `docker compose logs -f tme-next-1` | Czytelne bloki tekstu przy każdym GET/SET/invalidacji |
-| **Dashboard HTML** | http://localhost:3000/cache-debug?token=`<token>` | Live podgląd L1, timestampów tagów, timeline zdarzeń |
-| **JSON** | `/api/cache-debug?token=`<token>`` | Snapshot + ostatnie zdarzenia |
-| **Plain text** | ten sam URL + nagłówek `Accept: text/plain` | Raport do `curl` / wklejenia |
-
-Każda instancja ma **własny** debug (osobna pamięć Node). Przy nginx sprawdź nagłówek `X-Upstream` albo wejdź bezpośrednio na port 3000–3007.
+| Kanał | Opis |
+|---|---|
+| **Logi w terminalu** | `docker compose logs -f tme-next-1` — czytelne bloki tekstu przy każdym GET/SET/invalidacji |
+| **Redis Insight** | Klucze `meta:debug-events:{HOSTNAME}`, `meta:debug-l1:{HOSTNAME}`, `meta:debug-pending:{HOSTNAME}` — mirror L1 i timeline zdarzeń ze wszystkich workerów w kontenerze |
 
 ### Przykład (dev)
 
 ```bash
 # w apps/tmeNext/.env:
-REMOTE_CACHE_DEBUG=local-dev-secret
+REMOTE_CACHE_DEBUG_ENABLED=true
 
 npx nx dev tmeNext
-# otwórz http://localhost:3000/pl/pl/posts  (generuje zdarzenia)
-# potem http://localhost:3000/cache-debug?token=local-dev-secret
+# otwórz http://localhost:3000/pl/pl/posts  (generuje zdarzenia w logach i Redis)
 ```
 
 ### Przykład (Docker)
 
 ```yaml
 # docker-compose.yml → sekcja x-tme-next → environment:
-REMOTE_CACHE_DEBUG: "local-dev-secret"
+REMOTE_CACHE_DEBUG_ENABLED: "true"
 ```
 
-Po rebuild: `http://localhost:3000/cache-debug?token=local-dev-secret` (instancja 1).
+Handler jest w paczce `packages/cache-handler` (TypeScript, build do `dist/` przed `next build`).
 
 ### Co widać w logach (przykład)
 

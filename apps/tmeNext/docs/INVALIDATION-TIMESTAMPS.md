@@ -9,7 +9,7 @@ Handler invaliduje cache na dwa sposoby naraz:
 
 Ten dokument opisuje **timestampy** — drugi, „bezpiecznikowy” mechanizm.
 
-Implementacja: `cache-handlers/remote-handler.mjs`. Więcej kontekstu: [CACHING.md §4](./CACHING.md).
+Implementacja: paczka `@tme/cache-handler` (`packages/cache-handler`). Więcej kontekstu: [CACHING.md §4](./CACHING.md).
 
 ---
 

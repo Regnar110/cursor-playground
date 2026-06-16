@@ -5,7 +5,7 @@ const nextConfig: NextConfig = {
   output: "standalone",
   cacheComponents: true,
   cacheHandlers: {
-    remote: require.resolve("./cache-handlers/remote-handler.mjs"),
+    remote: require.resolve("@tme/cache-handler"),
   },
   images: {
     remotePatterns: [

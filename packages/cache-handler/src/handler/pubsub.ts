@@ -1,23 +1,14 @@
 import v8 from "node:v8";
-import * as cacheDebug from "../cache-debug.mjs";
-import { INVALIDATE_CHANNEL, isBuildPhase } from "./config.mjs";
-import { lruDeleteAndSync, invalidateLruByTags } from "./l1-cache.mjs";
-import { createRedis, getRedis } from "./redis-client.mjs";
-import {
-  lru,
-  redisSubClient,
-  redisSubConnecting,
-  setRedisSubClient,
-  setRedisSubConnecting,
-} from "./state.mjs";
+import * as cacheDebug from "../cache-debug.js";
+import { INVALIDATE_CHANNEL, isBuildPhase } from "./config.js";
+import { invalidateLruByTags, lruDeleteAndSync } from "./l1-cache.js";
+import { createRedis, getRedis } from "./redis-client.js";
+import { lru, redisSubClient, redisSubConnecting, setRedisSubClient, setRedisSubConnecting } from "./state.js";
 
-/**
- * Broadcasts invalidation to other instances (clear their L1).
- *
- * @param {{tags?: string[], keys?: string[]}} payload - Tags and/or entry keys to remove from LRU.
- * @returns {Promise<void>}
- */
-export async function publishInvalidation(payload) {
+export async function publishInvalidation(payload: {
+  tags?: string[];
+  keys?: string[];
+}): Promise<void> {
   try {
     const redis = await getRedis();
     if (!redis) {
@@ -25,17 +16,12 @@ export async function publishInvalidation(payload) {
     }
     await redis.publish(INVALIDATE_CHANNEL, v8.serialize(payload).toString("base64"));
   } catch (err) {
-    console.warn("[remote-cache-handler] publish failed:", err.message);
+    const message = err instanceof Error ? err.message : String(err);
+    console.warn("[remote-cache-handler] publish failed:", message);
   }
 }
 
-/**
- * Starts Pub/Sub subscriber (once) that clears L1 after invalidations from other instances.
- * Requires a separate connection — a subscriber client cannot run other commands.
- *
- * @returns {Promise<void>}
- */
-export async function setupSubscriber() {
+export async function setupSubscriber(): Promise<void> {
   if (isBuildPhase || !process.env.REDIS_HOST || (redisSubClient && redisSubClient.status === "ready")) {
     return;
   }
@@ -50,7 +36,10 @@ export async function setupSubscriber() {
             return;
           }
           try {
-            const payload = v8.deserialize(Buffer.from(message, "base64"));
+            const payload = v8.deserialize(Buffer.from(message, "base64")) as {
+              tags?: string[];
+              keys?: string[];
+            };
             if (payload.tags?.length) {
               const before = lru.size;
               invalidateLruByTags(payload.tags);
@@ -85,6 +74,7 @@ export async function setupSubscriber() {
     await redisSubConnecting;
   } catch (err) {
     setRedisSubConnecting(null);
-    console.warn("[remote-cache-handler] Pub/Sub setup failed:", err.message);
+    const message = err instanceof Error ? err.message : String(err);
+    console.warn("[remote-cache-handler] Pub/Sub setup failed:", message);
   }
 }

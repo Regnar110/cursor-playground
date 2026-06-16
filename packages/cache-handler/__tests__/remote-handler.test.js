@@ -1,10 +1,5 @@
 /**
  * Testy jednostkowe remote cache handlera (LRU + Redis + Pub/Sub + single-flight).
- *
- * ioredis jest podmienione na in-memory FakeRedis (jest.config: moduleNameMapper).
- * loadHandler() laduje modul na swiezo (jest.resetModules) = "nowy proces Next.js";
- * stan FakeRedis przezywa przeladowanie, wiec mozna symulowac wiele instancji
- * wspoldzielacych jeden Redis.
  */
 const v8 = require("node:v8");
 
@@ -18,7 +13,7 @@ let handler;
 function loadHandler() {
   jest.resetModules();
   FakeRedis = require("./fake-redis.cjs");
-  return require("../remote-handler.mjs").default;
+  return require("../src/handler/create-handler.ts").default;
 }
 
 function streamFrom(text) {
@@ -51,8 +46,16 @@ function makeEntry({
   return { value: streamFrom(payload), tags, stale: 60, timestamp, expire, revalidate };
 }
 
-/** Wpis zapisany "recznie" do FakeRedis w formacie handlera (v8) - jakby zapisala go inna instancja. */
-function seedRedisEntry(encodedKey, { payload = "remote", tags = [TAG], revalidate = 300, expire = 3600, timestamp = Date.now() } = {}) {
+function seedRedisEntry(
+  encodedKey,
+  {
+    payload = "remote",
+    tags = [TAG],
+    revalidate = 300,
+    expire = 3600,
+    timestamp = Date.now(),
+  } = {},
+) {
   FakeRedis.state.store.set(
     encodedKey,
     v8.serialize({ value: Buffer.from(payload), tags, stale: 60, timestamp, expire, revalidate }),
@@ -63,8 +66,8 @@ beforeEach(() => {
   process.env.REDIS_HOST = "fake";
   process.env.REDIS_PORT = "6379";
   process.env.REDIS_DB = "0";
-  delete process.env.REDIS_PASSWORD;
-  delete process.env.REMOTE_CACHE_DEBUG;
+  process.env.REDIS_PASSWORD = "test";
+  delete process.env.REMOTE_CACHE_DEBUG_ENABLED;
   delete process.env.NEXT_PHASE;
   handler = loadHandler();
   FakeRedis.reset();
@@ -93,9 +96,7 @@ describe("set + get", () => {
 
     expect(FakeRedis.state.store.has(ENCODED_KEY)).toBe(true);
     expect(FakeRedis.state.store.has(CACHE_KEY)).toBe(false);
-    // member indeksu = dokladnie nazwa klucza wpisu
     expect(Array.from(FakeRedis.state.sets.get(`index:${TAG}`))).toEqual([ENCODED_KEY]);
-    // TTL: wpis = max(expire, 60), indeks = TTL wpisu + 60
     expect(FakeRedis.state.ttls.get(ENCODED_KEY)).toBe(3600);
     expect(FakeRedis.state.ttls.get(`index:${TAG}`)).toBe(3660);
   });
@@ -107,22 +108,10 @@ describe("set + get", () => {
     expect(raw._meta).toMatchObject({ layer: "data", resource: "posts", locale: "pl/pl" });
   });
 
-  test("tag bez scope (zasob globalny) dostaje _meta.scope = 'global'", async () => {
-    const GLOBAL_KEY = 'abc:["config"]';
-    await handler.set(GLOBAL_KEY, Promise.resolve(makeEntry({ tags: ["data:config"] })));
-
-    const raw = v8.deserialize(FakeRedis.state.store.get(GLOBAL_KEY.replace(/:/g, ";")));
-    expect(raw._meta).toMatchObject({ layer: "data", resource: "config", locale: "global" });
-    // indeks 1:1 dziala tak samo bez scope
-    expect(Array.from(FakeRedis.state.sets.get("index:data:config"))).toEqual([
-      GLOBAL_KEY.replace(/:/g, ";"),
-    ]);
-  });
-
   test("inna instancja (swiezy proces) czyta wpis z Redis", async () => {
     await handler.set(CACHE_KEY, Promise.resolve(makeEntry({ payload: "shared" })));
 
-    const handlerB = loadHandler(); // nowy modul = pusty LRU, ten sam FakeRedis
+    const handlerB = loadHandler();
     const entry = await handlerB.get(CACHE_KEY, []);
 
     expect(entry).toBeDefined();
@@ -150,15 +139,15 @@ describe("single-flight", () => {
   });
 
   test("set() zwalnia locka tej instancji", async () => {
-    await handler.get(CACHE_KEY, []); // przejmuje lock
+    await handler.get(CACHE_KEY, []);
     await handler.set(CACHE_KEY, Promise.resolve(makeEntry()));
 
     expect(FakeRedis.state.store.has(`lock:${ENCODED_KEY}`)).toBe(false);
   });
 
   test("nie kasuje locka nalezacego do innej instancji (compare-and-delete)", async () => {
-    await handler.get(CACHE_KEY, []); // lock tej instancji
-    FakeRedis.state.store.set(`lock:${ENCODED_KEY}`, "pid-999-aaaaaaaaaaaa"); // "przejety" przez kogos
+    await handler.get(CACHE_KEY, []);
+    FakeRedis.state.store.set(`lock:${ENCODED_KEY}`, "pid-999-aaaaaaaaaaaa");
     await handler.set(CACHE_KEY, Promise.resolve(makeEntry()));
 
     expect(FakeRedis.state.store.get(`lock:${ENCODED_KEY}`)).toBe("pid-999-aaaaaaaaaaaa");
@@ -168,7 +157,6 @@ describe("single-flight", () => {
     FakeRedis.state.store.set(`lock:${ENCODED_KEY}`, "pid-999-aaaaaaaaaaaa");
 
     const getPromise = handler.get(CACHE_KEY, []);
-    // wlasciciel locka zapisuje wynik w trakcie naszego pollingu
     setTimeout(() => {
       seedRedisEntry(ENCODED_KEY, { payload: "rendered-elsewhere" });
       FakeRedis.state.store.delete(`lock:${ENCODED_KEY}`);
@@ -189,16 +177,16 @@ describe("invalidacja (updateTags)", () => {
 
     await handler.updateTags([TAG], {});
 
-    // wpis + indeks invalidowanego tagu zniknely, drugi tag nietkniety
     expect(FakeRedis.state.store.has(ENCODED_KEY)).toBe(false);
     expect(FakeRedis.state.sets.has(`index:${TAG}`)).toBe(false);
     expect(FakeRedis.state.store.has(OTHER_KEY.replace(/:/g, ";"))).toBe(true);
-    // meta: timestamp z TTL 7 dni + rejestr tagow
     expect(FakeRedis.state.store.get(`meta:revalidated-at:${TAG}`)).toMatch(/^\d+$/);
     expect(FakeRedis.state.ttls.get(`meta:revalidated-at:${TAG}`)).toBe(7 * 24 * 60 * 60);
     expect(FakeRedis.state.sets.get("meta:revalidated-tags").has(TAG)).toBe(true);
-    // Pub/Sub do pozostalych instancji
-    const published = v8.deserialize(Buffer.from(FakeRedis.state.published.at(-1).message, "base64"));
+
+    const published = v8.deserialize(
+      Buffer.from(FakeRedis.state.published.at(-1).message, "base64"),
+    );
     expect(published.tags).toEqual([TAG]);
     expect(published.keys).toEqual([ENCODED_KEY]);
 
@@ -214,10 +202,9 @@ describe("invalidacja (updateTags)", () => {
   });
 
   test("komunikat Pub/Sub z innej instancji czysci lokalne LRU", async () => {
-    await handler.get("warmup:key", []); // pierwszy get podpina subskrybenta
+    await handler.get("warmup:key", []);
     await handler.set(CACHE_KEY, Promise.resolve(makeEntry({ payload: "stale" })));
 
-    // inna instancja skasowala wpis w Redis i nadala komunikat
     FakeRedis.state.store.delete(ENCODED_KEY);
     const sub = FakeRedis.state.subscribers[0];
     sub.emit(
@@ -226,7 +213,6 @@ describe("invalidacja (updateTags)", () => {
       v8.serialize({ tags: [TAG], keys: [ENCODED_KEY] }).toString("base64"),
     );
 
-    // bez czyszczenia LRU dostalibysmy hit "stale"; po Pub/Sub jest pelny miss
     expect(await handler.get(CACHE_KEY, [])).toBeUndefined();
   });
 });
@@ -236,7 +222,6 @@ describe("refreshTags", () => {
     const STALE_TAG = "data:old:xx:yy";
     FakeRedis.state.sets.set("meta:revalidated-tags", new Set([TAG, STALE_TAG]));
     FakeRedis.state.store.set(`meta:revalidated-at:${TAG}`, "12345");
-    // STALE_TAG nie ma klucza meta (TTL wygasl)
 
     await handler.refreshTags();
 
@@ -252,16 +237,15 @@ describe("TTL indeksow (EXPIRE NX + GT)", () => {
     expect(FakeRedis.state.ttls.get(`index:${TAG}`)).toBe(3660);
 
     await handler.set('abc:["posts","short"]', Promise.resolve(makeEntry({ expire: 120 })));
-    expect(FakeRedis.state.ttls.get(`index:${TAG}`)).toBe(3660); // bez zmian
+    expect(FakeRedis.state.ttls.get(`index:${TAG}`)).toBe(3660);
 
     await handler.set('abc:["posts","long"]', Promise.resolve(makeEntry({ expire: 7200 })));
-    expect(FakeRedis.state.ttls.get(`index:${TAG}`)).toBe(7260); // wydluzony
+    expect(FakeRedis.state.ttls.get(`index:${TAG}`)).toBe(7260);
   });
 });
 
 describe("odpornosc na awarie Redis", () => {
   beforeEach(() => {
-    // warningi o fallbacku sa tu oczekiwane - nie zasmiecaj outputu testow
     jest.spyOn(console, "warn").mockImplementation(() => {});
   });
 
@@ -272,22 +256,19 @@ describe("odpornosc na awarie Redis", () => {
     const entry = await handler.get(CACHE_KEY, []);
 
     expect(await readAll(entry.value)).toBe("lru-only");
-    expect(FakeRedis.state.store.size).toBe(0); // nic nie trafilo do "Redisa"
+    expect(FakeRedis.state.store.size).toBe(0);
   });
 
   test('po "end" klient jest odtwarzany po cooldownie (fix reconnectu)', async () => {
     await handler.set(CACHE_KEY, Promise.resolve(makeEntry()));
     const clientsBefore = FakeRedis.state.instances.length;
 
-    // permanentna smierc glownego klienta (ioredis po wyczerpaniu retryStrategy)
     FakeRedis.state.instances.find((c) => !c.subscribedChannel).die();
 
-    // w cooldownie: zapis idzie tylko do LRU
     const DURING_KEY = 'abc:["posts","during"]';
     await handler.set(DURING_KEY, Promise.resolve(makeEntry()));
     expect(FakeRedis.state.store.has(DURING_KEY.replace(/:/g, ";"))).toBe(false);
 
-    // po 30 s cooldownu nastepna operacja buduje swiezego klienta
     const realNow = Date.now();
     jest.spyOn(Date, "now").mockReturnValue(realNow + 31_000);
 

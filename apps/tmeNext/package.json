@@ -6,29 +6,25 @@
     "name": "tmeNext"
   },
   "scripts": {
+    "predev": "npm run build -w @tme/cache-handler",
+    "prebuild": "npm run build -w @tme/cache-handler",
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint",
-    "test": "jest"
+    "lint": "eslint"
   },
   "dependencies": {
-    "ioredis": "^5.11.1",
-    "lru-cache": "^11.5.1",
+    "@tme/cache-handler": "*",
     "next": "16.2.0",
     "react": "19.2.4",
     "react-dom": "19.2.4"
   },
   "devDependencies": {
-    "@babel/core": "^7.29.7",
-    "@babel/preset-env": "^7.29.7",
     "@types/node": "^20",
     "@types/react": "^19",
     "@types/react-dom": "^19",
-    "babel-jest": "^30.4.1",
     "eslint": "^9",
     "eslint-config-next": "16.2.0",
-    "jest": "^30.4.2",
     "typescript": "^5"
   }
 }

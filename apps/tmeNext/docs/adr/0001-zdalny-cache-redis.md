@@ -3,7 +3,7 @@
 - **Status:** Zaakceptowana
 - **Data:** 2026-06-12
 - **Decydenci:** zespół tmeNext
-- **Powiązane:** [docs/CACHING.md](../CACHING.md) (szczegóły implementacji), `cache-handlers/remote-handler.mjs`, testy: `cache-handlers/__tests__/`, `apps/tmeNext-K6Test`
+- **Powiązane:** [docs/CACHING.md](../CACHING.md) (szczegóły implementacji), `packages/cache-handler`, testy: `packages/cache-handler/__tests__/`, `apps/tmeNext-K6Test`
 
 ## Kontekst i problem
 
@@ -36,7 +36,7 @@ backendu cache i na nagły ruch na zimne klucze (thundering herd).
 
 ## Decyzja
 
-Implementujemy własny cache handler (`cache-handlers/remote-handler.mjs`) podpięty pod
+Implementujemy własny cache handler (paczka `@tme/cache-handler`) podpięty pod
 `cacheHandlers.remote` w `next.config.ts`. Architektura:
 
 - **L1: LRU w procesie** (500 wpisów / 50 MB / TTL 15 s) — tnie round-tripy do Redis

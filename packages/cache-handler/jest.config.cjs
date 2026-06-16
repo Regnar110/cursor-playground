@@ -1,0 +1,21 @@
+/** @type {import("ts-jest").JestConfigWithTsJest} */
+module.exports = {
+  preset: "ts-jest/presets/default-esm",
+  testEnvironment: "node",
+  roots: ["<rootDir>/__tests__"],
+  testMatch: ["**/*.test.ts", "**/*.test.js"],
+  moduleFileExtensions: ["ts", "js", "cjs", "json"],
+  moduleNameMapper: {
+    "^(\\.{1,2}/.*)\\.js$": "$1",
+    "^ioredis$": "<rootDir>/__tests__/fake-redis.cjs",
+  },
+  transform: {
+    "^.+\\.tsx?$": [
+      "ts-jest",
+      {
+        useESM: true,
+        tsconfig: "tsconfig.json",
+      },
+    ],
+  },
+};

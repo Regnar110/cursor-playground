@@ -1,20 +1,20 @@
 /**
- * In-memory atrapa ioredis pokrywajaca dokladnie API uzywane przez remote-handler.mjs:
+ * In-memory atrapa ioredis pokrywajaca dokladnie API uzywane przez remote cache handler:
  * connect/status/on, get/getBuffer/set/del/exists, sadd/smembers/srem, mget,
- * expire (NX/GT), eval (compare-and-delete locka), publish/subscribe, multi().
- *
- * Stan jest trzymany na globalThis, zeby przezyl jest.resetModules() - testy moga
- * zaladowac handler na swiezo (nowy "proces") przy zachowaniu zawartosci "Redisa".
+ * expire (NX/GT), eval (compare-and-delete locka), publish/subscribe, multi(),
+ * hset/hdel/rpush/ltrim (debug telemetry).
  */
 const S = (globalThis.__fakeRedisState = globalThis.__fakeRedisState || {});
 
 function initState() {
   S.instances = [];
-  S.store = new Map(); // klucz -> wartosc (Buffer | string)
-  S.sets = new Map(); // klucz -> Set<string>
-  S.ttls = new Map(); // klucz -> sekundy (ostatnio ustawione)
-  S.published = []; // { channel, message }
-  S.subscribers = []; // instancje po subscribe()
+  S.store = new Map();
+  S.sets = new Map();
+  S.hashes = new Map();
+  S.lists = new Map();
+  S.ttls = new Map();
+  S.published = [];
+  S.subscribers = [];
   S.failConnect = false;
 }
 
@@ -50,7 +50,6 @@ class FakeRedis {
     this.status = "ready";
   }
 
-  /** Symuluje permanentna smierc klienta (ioredis po wyczerpaniu retryStrategy). */
   die() {
     this.status = "end";
     this.emit("end");
@@ -100,14 +99,51 @@ class FakeRedis {
 
   async del(key) {
     this.assertReady();
-    const existed = S.store.delete(key) || S.sets.delete(key);
+    const existed =
+      S.store.delete(key) ||
+      S.sets.delete(key) ||
+      S.hashes.delete(key) ||
+      S.lists.delete(key);
     S.ttls.delete(key);
     return existed ? 1 : 0;
   }
 
   async exists(key) {
     this.assertReady();
-    return S.store.has(key) || S.sets.has(key) ? 1 : 0;
+    return S.store.has(key) || S.sets.has(key) || S.hashes.has(key) || S.lists.has(key)
+      ? 1
+      : 0;
+  }
+
+  async hset(key, field, value) {
+    this.assertReady();
+    if (!S.hashes.has(key)) S.hashes.set(key, new Map());
+    S.hashes.get(key).set(field, value);
+    return 1;
+  }
+
+  async hdel(key, field) {
+    this.assertReady();
+    const hash = S.hashes.get(key);
+    if (!hash) return 0;
+    return hash.delete(field) ? 1 : 0;
+  }
+
+  async rpush(key, value) {
+    this.assertReady();
+    if (!S.lists.has(key)) S.lists.set(key, []);
+    S.lists.get(key).push(value);
+    return S.lists.get(key).length;
+  }
+
+  async ltrim(key, start, stop) {
+    this.assertReady();
+    const list = S.lists.get(key) ?? [];
+    const len = list.length;
+    const from = start < 0 ? Math.max(len + start, 0) : start;
+    const to = stop < 0 ? len + stop : stop;
+    S.lists.set(key, list.slice(from, to + 1));
+    return "OK";
   }
 
   async sadd(key, ...members) {
@@ -147,10 +183,10 @@ class FakeRedis {
 
   async expire(key, ttl, mode) {
     this.assertReady();
-    if (!S.store.has(key) && !S.sets.has(key)) return 0;
+    if (!S.store.has(key) && !S.sets.has(key) && !S.hashes.has(key) && !S.lists.has(key)) {
+      return 0;
+    }
     const current = S.ttls.get(key);
-    // Semantyka Redis 7: NX = tylko gdy klucz nie ma TTL;
-    // GT = tylko gdy nowy TTL wiekszy (klucz bez TTL traktowany jak nieskonczony -> pomijany)
     if (mode === "NX" && current != null) return 0;
     if (mode === "GT" && (current == null || ttl <= current)) return 0;
     S.ttls.set(key, ttl);

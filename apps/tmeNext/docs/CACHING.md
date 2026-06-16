@@ -1,7 +1,7 @@
 # Caching in tmeNext — a guide
 
 Next.js 16 with **Cache Components** + a custom `use cache: remote` handler
-(`cache-handlers/remote-handler.mjs`): in-process LRU → shared Redis → Pub/Sub.
+(`packages/cache-handler`, build TS → `dist/`): in-process LRU → shared Redis → Pub/Sub.
 Designed for **multiple instances running from a single `.next` artifact** (in our case:
 8 containers built from one image). Rationale and considered alternatives:
 [ADR-0001](./adr/0001-zdalny-cache-redis.md). Redis/ioredis gotchas behind the
@@ -304,7 +304,7 @@ const nextConfig: NextConfig = {
   output: "standalone",                // required for the Docker image
   cacheComponents: true,
   cacheHandlers: {
-    remote: require.resolve("./cache-handlers/remote-handler.mjs"),
+    remote: require.resolve("@tme/cache-handler"),
   },
 };
 ```
@@ -332,7 +332,7 @@ const nextConfig: NextConfig = {
 | **Full route cache (ISR)** | Cache of the whole rendered page HTML (`s-maxage=60` header). **A separate layer above our handler**, per instance — hence the convergence window after invalidation (section 4). |
 | **Cache handler** | Our implementation of the Next.js interface: `get` / `set` / `refreshTags` / `getExpiration` / `updateTags`. Next calls these methods; we decide where and how to keep the data. |
 
-### Handler concepts (remote-handler.mjs + Redis)
+### Handler concepts (`@tme/cache-handler` + Redis)
 
 | Term | What it means |
 |---|---|

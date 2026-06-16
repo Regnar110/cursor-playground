@@ -1,41 +1,40 @@
-import * as cacheDebug from "../cache-debug.mjs";
+import * as cacheDebug from "../cache-debug.js";
+import type { CacheEntry, CacheHandler, StoredEntry } from "../types.js";
 import {
   cloneEntryForReturn,
   deserializeEntry,
   readStreamToBuffer,
   serializeEntry,
-} from "./entry.mjs";
-import {
-  clearRenderLock,
-  debugEntryFields,
-  lruSetAndSync,
-  registerDebugHooks,
-  trackRenderLock,
-} from "./l1-cache.mjs";
-import { setupSubscriber } from "./pubsub.mjs";
-import { getRedis, redisUnavailableUntil } from "./redis-client.mjs";
-import { redisEntryKey, redisIndexKey, redisLockKey } from "./redis-keys.mjs";
+} from "./entry.js";
+import { lruSetAndSync } from "./l1-cache.js";
+import { setupSubscriber } from "./pubsub.js";
+import { getRedis, redisUnavailableUntil } from "./redis-client.js";
+import { redisEntryKey, redisIndexKey, redisLockKey } from "./redis-keys.js";
 import {
   LOCK_TTL_SECONDS,
   releaseRenderLock,
   tryAcquireRenderLock,
   waitForRemoteEntry,
-} from "./single-flight.mjs";
-import { DEBUG_BOX, instanceId, localTagTimestamps, lru, pendingSets } from "./state.mjs";
-import { isEntryFresh } from "./stale.mjs";
-import { getExpiration, refreshTags, updateTags } from "./tag-operations.mjs";
+} from "./single-flight.js";
+import {
+  instanceId,
+  localTagTimestamps,
+  lru,
+  pendingSets,
+  redisStatusSnapshot,
+} from "./state.js";
+import { isEntryFresh } from "./stale.js";
+import { getExpiration, refreshTags, updateTags } from "./tag-operations.js";
 
-registerDebugHooks();
+cacheDebug.registerDebugHooks(
+  lru,
+  localTagTimestamps,
+  instanceId,
+  redisStatusSnapshot,
+  pendingSets,
+);
 
-/**
- * Read entry: L1 (LRU) → L2 (Redis) → single-flight (wait for another instance
- * or acquire lock and return undefined so Next.js renders and calls set()).
- *
- * @param {string} cacheKey - Cache key from Next.js.
- * @param {string[]} softTags - Soft path tags (revalidatePath).
- * @returns {Promise<object | undefined>} Cache entry or undefined (miss).
- */
-async function get(cacheKey, softTags) {
+async function get(cacheKey: string, softTags: string[]): Promise<CacheEntry | undefined> {
   await setupSubscriber();
 
   const entryKey = redisEntryKey(cacheKey);
@@ -52,7 +51,10 @@ async function get(cacheKey, softTags) {
         "GET",
         "HIT",
         "Returned fresh entry from L1 (in-process LRU)",
-        { layer: "L1", ...debugEntryFields(lruEntry, entryKey, softTags) },
+        {
+          layer: "L1",
+          ...cacheDebug.debugEntryFields(lruEntry, entryKey, softTags),
+        },
       );
       return cloneEntryForReturn(lruEntry);
     }
@@ -62,7 +64,10 @@ async function get(cacheKey, softTags) {
       "STALE",
       "L1 entry rejected — " +
         cacheDebug.describeStaleReason(lruEntry, localTagTimestamps, softTags),
-      { layer: "L1", ...debugEntryFields(lruEntry, entryKey, softTags) },
+      {
+        layer: "L1",
+        ...cacheDebug.debugEntryFields(lruEntry, entryKey, softTags),
+      },
     );
   }
 
@@ -90,7 +95,10 @@ async function get(cacheKey, softTags) {
           "GET",
           "HIT",
           "Returned fresh entry from L2 (Redis) and promoted to L1",
-          { layer: "L2", ...debugEntryFields(entry, entryKey, softTags) },
+          {
+            layer: "L2",
+            ...cacheDebug.debugEntryFields(entry, entryKey, softTags),
+          },
         );
         return cloneEntryForReturn(entry);
       }
@@ -100,7 +108,10 @@ async function get(cacheKey, softTags) {
         "STALE",
         "Redis entry rejected — " +
           cacheDebug.describeStaleReason(entry, localTagTimestamps, softTags),
-        { layer: "L2", ...debugEntryFields(entry, entryKey, softTags) },
+        {
+          layer: "L2",
+          ...cacheDebug.debugEntryFields(entry, entryKey, softTags),
+        },
       );
     }
 
@@ -116,7 +127,7 @@ async function get(cacheKey, softTags) {
     const acquired = await tryAcquireRenderLock(redis, cacheKey);
     if (acquired) {
       const cacheLayer = cacheDebug.classifyCacheLayer([], softTags);
-      trackRenderLock(entryKey, { cacheLayer });
+      cacheDebug.trackRenderLock(entryKey, { cacheLayer });
       cacheDebug.log(
         "GET",
         "ACQUIRED",
@@ -146,23 +157,16 @@ async function get(cacheKey, softTags) {
     );
     return undefined;
   } catch (err) {
-    console.error("[remote-cache-handler] get error:", err.message);
-    cacheDebug.log("GET", "MISS", `get() error: ${err.message}`, { key: entryKey });
+    const message = err instanceof Error ? err.message : String(err);
+    console.error("[remote-cache-handler] get error:", message);
+    cacheDebug.log("GET", "MISS", `get() error: ${message}`, { key: entryKey });
     return undefined;
   }
 }
 
-/**
- * Write entry: LRU + Redis (pipeline: payload with TTL, sadd to tag indexes,
- * extend index TTL). Finally releases this instance's single-flight lock.
- *
- * @param {string} cacheKey - Raw Next.js cache key.
- * @param {Promise<object>} pendingEntry - Entry (value as ReadableStream).
- * @returns {Promise<void>}
- */
-async function set(cacheKey, pendingEntry) {
-  let resolvePending;
-  const pendingPromise = new Promise((resolve) => {
+async function set(cacheKey: string, pendingEntry: Promise<CacheEntry>): Promise<void> {
+  let resolvePending!: () => void;
+  const pendingPromise = new Promise<void>((resolve) => {
     resolvePending = resolve;
   });
   pendingSets.set(cacheKey, pendingPromise);
@@ -174,7 +178,7 @@ async function set(cacheKey, pendingEntry) {
     const entry = await pendingEntry;
     const buffer = await readStreamToBuffer(entry.value);
 
-    const storedEntry = {
+    const storedEntry: StoredEntry = {
       ...entry,
       _buffer: buffer,
       _size: buffer.length,
@@ -215,8 +219,9 @@ async function set(cacheKey, pendingEntry) {
       redis: "yes",
     });
   } catch (err) {
-    console.error("[remote-cache-handler] set error:", err.message);
-    cacheDebug.log("SET", "MISS", `set() error: ${err.message}`, { key: entryKey });
+    const message = err instanceof Error ? err.message : String(err);
+    console.error("[remote-cache-handler] set error:", message);
+    cacheDebug.log("SET", "MISS", `set() error: ${message}`, { key: entryKey });
   } finally {
     const redisForRelease = redis ?? (await getRedis());
     if (redisForRelease) {
@@ -228,25 +233,18 @@ async function set(cacheKey, pendingEntry) {
         { key: entryKey },
       );
     }
-    clearRenderLock(entryKey);
+    cacheDebug.clearRenderLock(entryKey);
     resolvePending();
     pendingSets.delete(cacheKey);
   }
 }
 
-/** Merged debug view (local + Redis sync from all workers in this container). */
-async function getDebugPayload() {
-  return cacheDebug.buildDebugPayload({
-    getRedis,
-    debugBox: DEBUG_BOX,
-  });
-}
-
-export default {
+const handler: CacheHandler = {
   get,
   set,
   refreshTags,
   getExpiration,
   updateTags,
-  getDebugPayload,
 };
+
+export default handler;

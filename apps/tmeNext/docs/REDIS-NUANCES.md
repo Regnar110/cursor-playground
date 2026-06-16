@@ -1,7 +1,7 @@
 # Niuanse Redis/ioredis w remote cache handlerze
 
 Każdy punkt w formule: **problem → naiwne rozwiązanie → dlaczego się psuje → jak robi to
-handler** (`cache-handlers/remote-handler.mjs`). Część z tych pułapek odkryliśmy
+handler** (`packages/cache-handler`). Część z tych pułapek odkryliśmy
 empirycznie podczas debugowania — to dokument typu "czemu ten kod wygląda dziwnie".
 
 Przewodnik po całości cachowania: [CACHING.md](./CACHING.md).

@@ -3,12 +3,14 @@
   "version": "0.1.0",
   "private": true,
   "workspaces": [
-    "apps/*"
+    "apps/*",
+    "packages/*"
   ],
   "scripts": {
     "dev": "nx dev tmeNext",
-    "build": "nx build tmeNext",
+    "build": "nx build cache-handler && nx build tmeNext",
     "lint": "nx lint tmeNext",
+    "test:cache-handler": "nx test cache-handler",
     "compose:up": "docker compose up -d --build",
     "compose:down": "docker compose down",
     "k6:load": "nx run tmeNext-K6Test:load",

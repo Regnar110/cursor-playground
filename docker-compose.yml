@@ -10,7 +10,8 @@ x-tme-next: &tme-next
     REDIS_HOST: redis
     REDIS_PORT: "6379"
     REDIS_DB: "0"
-    REMOTE_CACHE_DEBUG: "local-dev-secret"
+    REDIS_PASSWORD: "local-dev"
+    REMOTE_CACHE_DEBUG_ENABLED: "true"
   depends_on:
     redis:
       condition: service_healthy
@@ -29,9 +30,9 @@ services:
       - "6379:6379"
     volumes:
       - redis-data:/data
-    command: redis-server --appendonly yes
+    command: redis-server --appendonly yes --requirepass local-dev
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
+      test: ["CMD", "redis-cli", "-a", "local-dev", "ping"]
       interval: 5s
       timeout: 3s
       retries: 5
@@ -45,6 +46,7 @@ services:
     environment:
       RI_REDIS_HOST: redis
       RI_REDIS_PORT: "6379"
+      RI_REDIS_PASSWORD: "local-dev"
       RI_REDIS_ALIAS: "playground-cache"
     depends_on:
       redis:

@@ -1,6 +1,6 @@
-import Redis from "ioredis";
-import * as cacheDebug from "../cache-debug.mjs";
-import { envInt, isBuildPhase, REDIS_COOLDOWN_MS } from "./config.mjs";
+import Redis, { type RedisOptions } from "ioredis";
+import * as cacheDebug from "../cache-debug.js";
+import { envInt, isBuildPhase, REDIS_COOLDOWN_MS } from "./config.js";
 import {
   redisClient,
   redisConnecting,
@@ -10,57 +10,41 @@ import {
   resetSubRedisConnection,
   setRedisClient,
   setRedisConnecting,
-} from "./state.mjs";
+} from "./state.js";
 
-/**
- * Builds ioredis client options from REDIS_* env vars.
- *
- * @returns {import("ioredis").RedisOptions | null} null when REDIS_HOST is not set.
- */
-function redisOptions() {
-  if (!process.env.REDIS_HOST) {
+function redisOptions(): RedisOptions | null {
+  if (
+    !process.env.REDIS_HOST ||
+    !process.env.REDIS_PORT ||
+    !process.env.REDIS_PASSWORD
+  ) {
     return null;
   }
 
-  const options = {
+  return {
     host: process.env.REDIS_HOST,
     port: envInt("REDIS_PORT", 6379),
+    password: process.env.REDIS_PASSWORD,
     db: envInt("REDIS_DB", 0),
     lazyConnect: true,
     enableOfflineQueue: false,
     maxRetriesPerRequest: 2,
-    retryStrategy: (times) => (times > 5 ? null : Math.min(times * 200, 2000)),
+    retryStrategy: (times: number) => (times > 5 ? null : Math.min(times * 200, 2000)),
   };
-
-  if (process.env.REDIS_PASSWORD) {
-    options.password = process.env.REDIS_PASSWORD;
-  }
-
-  return options;
 }
 
-/**
- * Creates an ioredis client tuned for fast LRU fallback:
- * - lazyConnect — manual connect() to control fallback
- * - enableOfflineQueue:false — commands fail immediately without a connection
- * - retryStrategy — a few attempts, then give up (30 s cooldown on LRU-only mode)
- *
- * @returns {import("ioredis").Redis} Unconnected client (status "wait").
- */
-function createRedis() {
+export function createRedis(): Redis {
   const options = redisOptions();
   if (!options) {
     throw new Error("REDIS_HOST is not configured");
   }
 
   const client = new Redis(options);
-  client.on("error", (err) => {
+  client.on("error", (err: Error) => {
     if (err?.message) {
       console.warn("[remote-cache-handler] Redis error:", err.message);
     }
   });
-  // After retryStrategy is exhausted (~5 s outage), ioredis emits "end" and the client
-  // is dead forever. Reset refs so the next request builds a fresh connection.
   client.on("end", () => {
     if (redisClient === client) {
       resetMainRedisConnection(Date.now() + REDIS_COOLDOWN_MS);
@@ -86,13 +70,7 @@ function createRedis() {
   return client;
 }
 
-/**
- * Returns shared Redis client or null (build phase, no REDIS_HOST, or cooldown after failure).
- * null === handler works on LRU only.
- *
- * @returns {Promise<import("ioredis").Redis | null>}
- */
-export async function getRedis() {
+export async function getRedis(): Promise<Redis | null> {
   if (isBuildPhase || !process.env.REDIS_HOST) {
     return null;
   }
@@ -121,12 +99,10 @@ export async function getRedis() {
   } catch (err) {
     setRedisConnecting(null);
     resetMainRedisConnection(Date.now() + REDIS_COOLDOWN_MS);
-    console.warn(
-      "[remote-cache-handler] Redis unavailable, using LRU only for 30s:",
-      err.message || "connection failed",
-    );
+    const message = err instanceof Error ? err.message : "connection failed";
+    console.warn("[remote-cache-handler] Redis unavailable, using LRU only for 30s:", message);
     return null;
   }
 }
 
-export { createRedis, redisUnavailableUntil };
+export { redisUnavailableUntil };
