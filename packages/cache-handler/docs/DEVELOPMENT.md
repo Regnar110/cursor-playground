@@ -45,7 +45,14 @@ src/
     └── pubsub.ts           # Invalidation subscriber
 
 __tests__/
-├── remote-handler.test.ts  # Integration tests (main suite)
+├── helpers/
+│   └── test-helpers.ts     # Shared fixtures, FakeRedis setup, handler loader
+├── get-set.test.ts         # Roundtrip, key encoding, revalidate expiry
+├── single-flight.test.ts   # Render lock acquire/release, peer polling
+├── update-tags.test.ts     # updateTags, getExpiration, Pub/Sub L1 clear
+├── refresh-tags.test.ts    # Sync tag timestamps from Redis
+├── index-ttl.test.ts       # EXPIRE NX / EXPIRE GT on tag indexes
+├── redis-failure.test.ts   # LRU-only fallback, reconnect after cooldown
 ├── cache-debug.test.ts     # Debug telemetry tests
 └── fake-redis.cjs          # In-memory ioredis mock
 ```
@@ -60,22 +67,15 @@ Jest configuration: `jest.config.ts`
 
 ### What the test suite covers
 
-**`remote-handler.test.ts`**
-
-| Area | Scenarios |
+| File | Scenarios |
 |------|-----------|
-| set + get | Roundtrip, key encoding (`:` → `;`), tag indexes, cross-instance read, revalidate expiry |
-| single-flight | Lock acquire/release, compare-and-delete, polling peer result |
-| invalidation | `updateTags` deletes entries and indexes, meta timestamps, Pub/Sub, `getExpiration` |
-| refreshTags | Sync from Redis, prune expired tag metadata |
-| index TTL | `EXPIRE NX` / `EXPIRE GT` behavior |
-| Redis failure | LRU-only fallback, reconnect after cooldown |
-
-**`cache-debug.test.ts`**
-
-- No-op when debug disabled
-- Log format and stale reason helpers
-- `classifyCacheLayer` mapping
+| `get-set.test.ts` | Roundtrip, key encoding (`:` → `;`), tag indexes, cross-instance read, revalidate expiry |
+| `single-flight.test.ts` | Lock acquire/release, compare-and-delete, polling peer result |
+| `update-tags.test.ts` | `updateTags` deletes entries and indexes, meta timestamps, Pub/Sub, `getExpiration` |
+| `refresh-tags.test.ts` | Sync from Redis, prune expired tag metadata |
+| `index-ttl.test.ts` | `EXPIRE NX` / `EXPIRE GT` behavior |
+| `redis-failure.test.ts` | LRU-only fallback, reconnect after cooldown |
+| `cache-debug.test.ts` | No-op when disabled, log format, `classifyCacheLayer` |
 
 ### FakeRedis
 
