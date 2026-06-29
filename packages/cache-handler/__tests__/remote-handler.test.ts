@@ -1,22 +1,54 @@
 /**
  * Testy jednostkowe remote cache handlera (LRU + Redis + Pub/Sub + single-flight).
  */
-const v8 = require("node:v8");
+import v8 from "node:v8";
+import { createRequire } from "node:module";
+import { join } from "node:path";
+import { afterEach, beforeEach, describe, expect, jest, test } from "@jest/globals";
+import type { CacheEntry, CacheHandler } from "../src/types.js";
+
+const PKG_ROOT = process.cwd();
+const requireCjs = createRequire(join(PKG_ROOT, "package.json"));
 
 const TAG = "data:posts:pl:pl";
 const CACHE_KEY = 'abc:["posts",{"country":"pl","lang":"pl"}]';
 const ENCODED_KEY = CACHE_KEY.replace(/:/g, ";");
 
-let FakeRedis;
-let handler;
-
-function loadHandler() {
-  jest.resetModules();
-  FakeRedis = require("./fake-redis.cjs");
-  return require("../src/handler/create-handler.ts").default;
+interface FakeRedisSubscriber {
+  emit: (event: string, ...args: unknown[]) => void;
 }
 
-function streamFrom(text) {
+interface FakeRedisInstance {
+  subscribedChannel: string | null;
+  die: () => void;
+}
+
+interface FakeRedisState {
+  store: Map<string, Buffer>;
+  sets: Map<string, Set<string>>;
+  ttls: Map<string, number>;
+  published: Array<{ channel: string; message: string }>;
+  subscribers: FakeRedisSubscriber[];
+  instances: FakeRedisInstance[];
+  failConnect: boolean;
+}
+
+interface FakeRedisModule {
+  state: FakeRedisState;
+  reset: () => void;
+  new (url: string, opts: unknown): unknown;
+}
+
+let FakeRedis: FakeRedisModule;
+let handler: CacheHandler;
+
+function loadHandler(): CacheHandler {
+  jest.resetModules();
+  FakeRedis = requireCjs(join(PKG_ROOT, "__tests__/fake-redis.cjs")) as FakeRedisModule;
+  return requireCjs(join(PKG_ROOT, "src/handler/create-handler.ts")).default as CacheHandler;
+}
+
+function streamFrom(text: string): ReadableStream<Uint8Array> {
   return new ReadableStream({
     start(controller) {
       controller.enqueue(Buffer.from(text));
@@ -25,9 +57,9 @@ function streamFrom(text) {
   });
 }
 
-async function readAll(stream) {
+async function readAll(stream: ReadableStream<Uint8Array>): Promise<string> {
   const reader = stream.getReader();
-  const chunks = [];
+  const chunks: Buffer[] = [];
   while (true) {
     const { done, value } = await reader.read();
     if (done) break;
@@ -42,20 +74,32 @@ function makeEntry({
   revalidate = 300,
   expire = 3600,
   timestamp = Date.now(),
-} = {}) {
+}: {
+  payload?: string;
+  tags?: string[];
+  revalidate?: number;
+  expire?: number;
+  timestamp?: number;
+} = {}): CacheEntry {
   return { value: streamFrom(payload), tags, stale: 60, timestamp, expire, revalidate };
 }
 
 function seedRedisEntry(
-  encodedKey,
+  encodedKey: string,
   {
     payload = "remote",
     tags = [TAG],
     revalidate = 300,
     expire = 3600,
     timestamp = Date.now(),
+  }: {
+    payload?: string;
+    tags?: string[];
+    revalidate?: number;
+    expire?: number;
+    timestamp?: number;
   } = {},
-) {
+): void {
   FakeRedis.state.store.set(
     encodedKey,
     v8.serialize({ value: Buffer.from(payload), tags, stale: 60, timestamp, expire, revalidate }),
@@ -85,10 +129,10 @@ describe("set + get", () => {
     const entry = await handler.get(CACHE_KEY, []);
 
     expect(entry).toBeDefined();
-    expect(await readAll(entry.value)).toBe("hello");
-    expect(entry.tags).toEqual([TAG]);
-    expect(entry.timestamp).toBe(ts);
-    expect(entry.revalidate).toBe(300);
+    expect(await readAll(entry!.value)).toBe("hello");
+    expect(entry!.tags).toEqual([TAG]);
+    expect(entry!.timestamp).toBe(ts);
+    expect(entry!.revalidate).toBe(300);
   });
 
   test('zapisuje w Redis pod kluczem z ";" zamiast ":" i indeksuje tag 1:1', async () => {
@@ -96,7 +140,7 @@ describe("set + get", () => {
 
     expect(FakeRedis.state.store.has(ENCODED_KEY)).toBe(true);
     expect(FakeRedis.state.store.has(CACHE_KEY)).toBe(false);
-    expect(Array.from(FakeRedis.state.sets.get(`index:${TAG}`))).toEqual([ENCODED_KEY]);
+    expect(Array.from(FakeRedis.state.sets.get(`index:${TAG}`) ?? [])).toEqual([ENCODED_KEY]);
     expect(FakeRedis.state.ttls.get(ENCODED_KEY)).toBe(3600);
     expect(FakeRedis.state.ttls.get(`index:${TAG}`)).toBe(3660);
   });
@@ -104,7 +148,9 @@ describe("set + get", () => {
   test("payload w Redis zawiera _meta do debugowania w Redis Insight", async () => {
     await handler.set(CACHE_KEY, Promise.resolve(makeEntry()));
 
-    const raw = v8.deserialize(FakeRedis.state.store.get(ENCODED_KEY));
+    const raw = v8.deserialize(FakeRedis.state.store.get(ENCODED_KEY)!) as {
+      _meta: { layer: string; resource: string; locale: string };
+    };
     expect(raw._meta).toMatchObject({ layer: "data", resource: "posts", locale: "pl/pl" });
   });
 
@@ -115,7 +161,7 @@ describe("set + get", () => {
     const entry = await handlerB.get(CACHE_KEY, []);
 
     expect(entry).toBeDefined();
-    expect(await readAll(entry.value)).toBe("shared");
+    expect(await readAll(entry!.value)).toBe("shared");
   });
 
   test("wpis po uplywie revalidate jest pomijany (miss)", async () => {
@@ -134,7 +180,7 @@ describe("single-flight", () => {
 
     expect(result).toBeUndefined();
     const lock = FakeRedis.state.store.get(`lock:${ENCODED_KEY}`);
-    expect(lock).toMatch(/^pid-\d+-[0-9a-f]{12}$/);
+    expect(String(lock)).toMatch(/^pid-\d+-[0-9a-f]{12}$/);
     expect(FakeRedis.state.ttls.get(`lock:${ENCODED_KEY}`)).toBe(30);
   });
 
@@ -147,14 +193,16 @@ describe("single-flight", () => {
 
   test("nie kasuje locka nalezacego do innej instancji (compare-and-delete)", async () => {
     await handler.get(CACHE_KEY, []);
-    FakeRedis.state.store.set(`lock:${ENCODED_KEY}`, "pid-999-aaaaaaaaaaaa");
+    FakeRedis.state.store.set(`lock:${ENCODED_KEY}`, Buffer.from("pid-999-aaaaaaaaaaaa"));
     await handler.set(CACHE_KEY, Promise.resolve(makeEntry()));
 
-    expect(FakeRedis.state.store.get(`lock:${ENCODED_KEY}`)).toBe("pid-999-aaaaaaaaaaaa");
+    expect(FakeRedis.state.store.get(`lock:${ENCODED_KEY}`)?.toString()).toBe(
+      "pid-999-aaaaaaaaaaaa",
+    );
   });
 
   test("czeka na wynik instancji trzymajacej lock zamiast renderowac", async () => {
-    FakeRedis.state.store.set(`lock:${ENCODED_KEY}`, "pid-999-aaaaaaaaaaaa");
+    FakeRedis.state.store.set(`lock:${ENCODED_KEY}`, Buffer.from("pid-999-aaaaaaaaaaaa"));
 
     const getPromise = handler.get(CACHE_KEY, []);
     setTimeout(() => {
@@ -164,7 +212,7 @@ describe("single-flight", () => {
 
     const entry = await getPromise;
     expect(entry).toBeDefined();
-    expect(await readAll(entry.value)).toBe("rendered-elsewhere");
+    expect(await readAll(entry!.value)).toBe("rendered-elsewhere");
   });
 });
 
@@ -180,13 +228,14 @@ describe("invalidacja (updateTags)", () => {
     expect(FakeRedis.state.store.has(ENCODED_KEY)).toBe(false);
     expect(FakeRedis.state.sets.has(`index:${TAG}`)).toBe(false);
     expect(FakeRedis.state.store.has(OTHER_KEY.replace(/:/g, ";"))).toBe(true);
-    expect(FakeRedis.state.store.get(`meta:revalidated-at:${TAG}`)).toMatch(/^\d+$/);
+    expect(FakeRedis.state.store.get(`meta:revalidated-at:${TAG}`)?.toString()).toMatch(/^\d+$/);
     expect(FakeRedis.state.ttls.get(`meta:revalidated-at:${TAG}`)).toBe(7 * 24 * 60 * 60);
-    expect(FakeRedis.state.sets.get("meta:revalidated-tags").has(TAG)).toBe(true);
+    expect(FakeRedis.state.sets.get("meta:revalidated-tags")?.has(TAG)).toBe(true);
 
+    const lastPublished = FakeRedis.state.published.at(-1);
     const published = v8.deserialize(
-      Buffer.from(FakeRedis.state.published.at(-1).message, "base64"),
-    );
+      Buffer.from(lastPublished!.message, "base64"),
+    ) as { tags: string[]; keys: string[] };
     expect(published.tags).toEqual([TAG]);
     expect(published.keys).toEqual([ENCODED_KEY]);
 
@@ -206,7 +255,7 @@ describe("invalidacja (updateTags)", () => {
     await handler.set(CACHE_KEY, Promise.resolve(makeEntry({ payload: "stale" })));
 
     FakeRedis.state.store.delete(ENCODED_KEY);
-    const sub = FakeRedis.state.subscribers[0];
+    const sub = FakeRedis.state.subscribers[0]!;
     sub.emit(
       "message",
       "pubsub:invalidate",
@@ -221,13 +270,13 @@ describe("refreshTags", () => {
   test("synchronizuje timestampy z Redis i przycina wygasle tagi", async () => {
     const STALE_TAG = "data:old:xx:yy";
     FakeRedis.state.sets.set("meta:revalidated-tags", new Set([TAG, STALE_TAG]));
-    FakeRedis.state.store.set(`meta:revalidated-at:${TAG}`, "12345");
+    FakeRedis.state.store.set(`meta:revalidated-at:${TAG}`, Buffer.from("12345"));
 
     await handler.refreshTags();
 
     expect(await handler.getExpiration([TAG])).toBe(12345);
     expect(await handler.getExpiration([STALE_TAG])).toBe(0);
-    expect(FakeRedis.state.sets.get("meta:revalidated-tags").has(STALE_TAG)).toBe(false);
+    expect(FakeRedis.state.sets.get("meta:revalidated-tags")?.has(STALE_TAG)).toBe(false);
   });
 });
 
@@ -255,7 +304,7 @@ describe("odpornosc na awarie Redis", () => {
     await handler.set(CACHE_KEY, Promise.resolve(makeEntry({ payload: "lru-only" })));
     const entry = await handler.get(CACHE_KEY, []);
 
-    expect(await readAll(entry.value)).toBe("lru-only");
+    expect(await readAll(entry!.value)).toBe("lru-only");
     expect(FakeRedis.state.store.size).toBe(0);
   });
 
@@ -263,7 +312,7 @@ describe("odpornosc na awarie Redis", () => {
     await handler.set(CACHE_KEY, Promise.resolve(makeEntry()));
     const clientsBefore = FakeRedis.state.instances.length;
 
-    FakeRedis.state.instances.find((c) => !c.subscribedChannel).die();
+    FakeRedis.state.instances.find((c) => !c.subscribedChannel)!.die();
 
     const DURING_KEY = 'abc:["posts","during"]';
     await handler.set(DURING_KEY, Promise.resolve(makeEntry()));

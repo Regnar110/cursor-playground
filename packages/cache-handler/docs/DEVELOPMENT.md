@@ -45,22 +45,22 @@ src/
     └── pubsub.ts           # Invalidation subscriber
 
 __tests__/
-├── remote-handler.test.js  # Integration tests (main suite)
-├── cache-debug.test.js     # Debug telemetry tests
+├── remote-handler.test.ts  # Integration tests (main suite)
+├── cache-debug.test.ts     # Debug telemetry tests
 └── fake-redis.cjs          # In-memory ioredis mock
 ```
 
 ## Testing
 
-Jest configuration: `jest.config.cjs`
+Jest configuration: `jest.config.ts`
 
-- ESM preset via `ts-jest`
+- ESM preset via `ts-jest` (`tsconfig.test.json` for tests)
 - `ioredis` mapped to `__tests__/fake-redis.cjs` (no real Redis required)
-- Tests live in `__tests__/*.test.js`
+- Tests live in `__tests__/*.test.ts`
 
 ### What the test suite covers
 
-**`remote-handler.test.js`**
+**`remote-handler.test.ts`**
 
 | Area | Scenarios |
 |------|-----------|
@@ -71,7 +71,7 @@ Jest configuration: `jest.config.cjs`
 | index TTL | `EXPIRE NX` / `EXPIRE GT` behavior |
 | Redis failure | LRU-only fallback, reconnect after cooldown |
 
-**`cache-debug.test.js`**
+**`cache-debug.test.ts`**
 
 - No-op when debug disabled
 - Log format and stale reason helpers

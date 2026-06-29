@@ -2,22 +2,33 @@
 
 This document describes the internal design of `@tme/cache-handler`: how cache reads and writes flow through L1 (in-process LRU) and L2 (Redis), how multiple instances coordinate, and how the handler behaves when Redis is unavailable.
 
-## Overview
+For tag invalidation in depth, see [INVALIDATION.md](INVALIDATION.md). For Redis key names, see [REDIS-SCHEMA.md](REDIS-SCHEMA.md).
+
+## System context
+
+Next.js calls the handler on each cache read and write. The handler sits between the framework and two storage layers: a per-process LRU (L1) and a shared Redis store (L2). Pub/Sub keeps L1 consistent across instances when tags are invalidated.
 
 ```mermaid
 flowchart LR
+    subgraph Next["Next.js Cache Components"]
+        FW["Framework"]
+    end
     subgraph Instance["Node.js instance"]
         Handler["CacheHandler"]
         L1["L1: in-process LRU"]
+        Sub["Pub/Sub subscriber"]
     end
     R[("L2: Redis")]
-    PS(("Pub/Sub channel"))
+    PS(("pubsub:invalidate"))
 
+    FW -->|"get / set / updateTags"| Handler
     Handler --> L1
     L1 -- miss --> R
     R -- hit --> L1
+    Handler --> R
     R --- PS
-    PS -- invalidation --> L1
+    PS -- invalidation --> Sub
+    Sub --> L1
 ```
 
 | Layer | Location | Role | Survives process restart |
@@ -44,13 +55,41 @@ flowchart LR
 | `src/handler/state.ts` | Process-global LRU, Redis clients, tag map |
 | `src/cache-debug.ts` | Optional write-only telemetry |
 
-## `get()` flow
+## Freshness model
+
+Every read path calls `isEntryFresh()` in `src/handler/stale.ts`. An entry is returned only when **all** checks pass. A failed check is treated as stale — the handler does not return the entry and continues as if it were missing.
+
+```mermaid
+flowchart TD
+    Entry["Candidate entry"] --> Expired{"Revalidate\nexpired?"}
+    Expired -- yes --> Stale["Reject as stale"]
+    Expired -- no --> Hard{"Any hard tag\ninvalidated?"}
+    Hard -- yes --> Stale
+    Hard -- no --> Soft{"Any soft tag\ninvalidated?"}
+    Soft -- yes --> Stale
+    Soft -- no --> Fresh["Return entry"]
+
+    Expired -.- ExpRule["now > timestamp + revalidate × 1000"]
+    Hard -.- HardRule["localTagTimestamps(tag) > entry.timestamp\nfor tag in entry.tags"]
+    Soft -.- SoftRule["localTagTimestamps(tag) > entry.timestamp\nfor tag in softTags"]
+```
+
+| Check | Input | Rule |
+|-------|-------|------|
+| Revalidate window | `entry.timestamp`, `entry.revalidate` | `Date.now() > timestamp + revalidate × 1000` |
+| Hard tags | `entry.tags` | Tag invalidation time in local map is newer than entry creation |
+| Soft tags | `get(..., softTags)` | Same as hard tags, but tags are not stored on the entry |
+
+Stale entries are never returned from L1 or L2. See [INVALIDATION.md](INVALIDATION.md) for how tag timestamps are written and synced.
+
+## `get()` — control flow
 
 Every `get()` call ensures the Pub/Sub subscriber is set up, then resolves the entry through the layers below.
 
 ```mermaid
 flowchart TD
-    Start["get(cacheKey, softTags)"] --> Pending{"Pending set\nfor this key?"}
+    Start["get(cacheKey, softTags)"] --> Sub["setupSubscriber()"]
+    Sub --> Pending{"Pending set\nfor this key?"}
     Pending -- yes --> AwaitPending["Await in-flight set()"]
     Pending -- no --> L1Check{"L1 hit\nand fresh?"}
     AwaitPending --> L1Check
@@ -72,55 +111,111 @@ flowchart TD
     Wait2 -- timeout --> Miss
 ```
 
-### Freshness
+On L2 hit, the handler promotes the entry to L1 (`lruSetAndSync`) before returning a clone to the framework.
 
-An entry is **fresh** when all of the following hold (`src/handler/stale.ts`):
+## `set()` — control flow
 
-1. **Not expired** — `Date.now() <= timestamp + revalidate * 1000`
-2. **Hard tags valid** — no entry tag has an invalidation timestamp newer than `entry.timestamp`
-3. **Soft tags valid** — same check for tags passed as `softTags` to `get()`
+`set()` runs after the framework renders on a cache miss. Concurrent `get()` calls for the same key block on a pending promise until this write completes.
 
-Stale entries are not returned; the handler continues to L2 or returns a miss.
+```mermaid
+flowchart TD
+    Start["set(cacheKey, pendingEntry)"] --> Register["Register pending promise\nin pendingSets"]
+    Register --> AwaitEntry["Await pendingEntry\n(framework render)"]
+    AwaitEntry --> Buffer["Buffer ReadableStream\n→ StoredEntry"]
+    Buffer --> L1Write["Write to L1\n(lruSetAndSync)"]
+    L1Write --> RedisAvail{"Redis\navailable?"}
+    RedisAvail -- no --> L1Only["L1 only — skip L2"]
+    RedisAvail -- yes --> Pipeline["Redis pipeline"]
+    Pipeline --> SetEntry["SET entry key\nEX max(expire, 60)"]
+    SetEntry --> IndexTags["For each tag:\nSADD index:{tag}\nEXPIRE NX / EXPIRE GT"]
+    IndexTags --> Exec["pipeline.exec()"]
+    L1Only --> Finally
+    Exec --> Finally["finally: release render lock\nresolve pending promise"]
+```
 
-## `set()` flow
+Steps in code (`src/handler/create-handler.ts`):
 
 1. Register a pending promise so concurrent `get()` calls for the same key wait for this write.
 2. Await the `pendingEntry` promise from the framework (rendered payload).
 3. Buffer the `ReadableStream` value and store in L1.
 4. If Redis is available, `SET` the serialized entry with TTL `max(expire, 60)` seconds.
-5. For each tag on the entry, add the entry key to a Redis set index (`index:{tag}`) with matching TTL (using `EXPIRE NX` and `EXPIRE GT` so shorter entries do not shrink index lifetime).
-6. Release the single-flight render lock (compare-and-delete via Lua script).
-7. Resolve the pending promise.
+5. For each tag on the entry, add the entry key to a Redis set index (`index:{tag}`) with matching TTL (`EXPIRE NX` and `EXPIRE GT` so shorter entries do not shrink index lifetime).
+6. In `finally`: release the single-flight render lock (compare-and-delete via Lua script), resolve the pending promise, and remove it from `pendingSets`.
 
-If Redis is unavailable, the entry is stored in L1 only.
+If Redis is unavailable, steps 4–5 are skipped; the entry remains in L1 only. Lock release and pending cleanup still run in `finally`.
 
-## Single-flight (cache miss coordination)
+## Single-flight (render deduplication)
 
-When no fresh entry exists and Redis is reachable:
+When no fresh entry exists and Redis is reachable, only one instance should render. Others wait for the result in L2.
 
-1. The first instance to `SET NX` on `lock:{encodedKey}` with its `instanceId` wins and returns `undefined` (miss) so the framework renders.
-2. Other instances detect the lock and **poll** Redis every `SINGLE_FLIGHT_POLLING_MS` (default 100 ms), up to `SINGLE_FLIGHT_ATTEMPTS` (default 50, ~5 s).
-3. When the winning instance completes `set()`, peers read the new entry from Redis.
-4. Lock release uses a Lua script so only the lock owner deletes it; expired locks are harmless.
+```mermaid
+sequenceDiagram
+    participant A as Instance A (winner)
+    participant B as Instance B (waiter)
+    participant Redis as Redis
 
-Lock TTL defaults to `SINGLE_FLIGHT_LOCK_TTL` (30 s).
+    Note over A,B: Both call get() — L1/L2 miss, entry fresh checks passed
+
+    A->>Redis: SET NX lock:{key} = instanceId
+    Redis-->>A: OK (lock acquired)
+    A-->>A: return undefined → framework renders
+
+    B->>Redis: EXISTS lock:{key}
+    Redis-->>B: 1 (lock held)
+    B->>Redis: poll GET entry:{key} every 100ms
+
+    A->>A: set() writes entry to L1 + Redis
+    A->>Redis: DEL lock (Lua, owner only)
+
+    B->>Redis: GET entry:{key}
+    Redis-->>B: serialized entry
+    B-->>B: promote to L1, return entry
+```
+
+| Step | Behavior |
+|------|----------|
+| Lock acquisition | First instance to `SET NX` on `lock:{encodedKey}` with its `instanceId` wins and returns `undefined` (miss) |
+| Waiting | Other instances poll Redis every `SINGLE_FLIGHT_POLLING_MS` (default 100 ms), up to `SINGLE_FLIGHT_ATTEMPTS` (default 50, ~5 s) |
+| Completion | Winning instance completes `set()`; peers read the new entry from Redis |
+| Lock release | Lua script deletes the lock only if the owner matches; expired locks are harmless |
+
+Lock TTL defaults to `SINGLE_FLIGHT_LOCK_TTL` (30 s). See [CONFIGURATION.md](CONFIGURATION.md) for tunables.
 
 ## Pub/Sub invalidation
 
 Channel: `pubsub:invalidate` (see `src/handler/config.ts`).
 
-On `updateTags`, the handler publishes a v8-serialized, base64-encoded payload `{ tags?, keys? }`. Subscribers on other instances:
+On `updateTags`, the handler publishes a v8-serialized, base64-encoded payload `{ tags?, keys? }`. Subscribers on other instances clear matching L1 entries without touching L2 (L2 is deleted by the publisher).
 
-- Remove L1 entries whose tags intersect the payload tags
-- Delete specific L1 keys listed in `keys`
+```mermaid
+flowchart LR
+    Pub["Publisher instance\nupdateTags()"] --> Redis[("Redis")]
+    Redis -->|"PUBLISH pubsub:invalidate"| Sub1["Subscriber\ninstance 1"]
+    Redis --> Sub2["Subscriber\ninstance 2"]
+    Sub1 --> L1a["invalidateLruByTags\n+ delete keys"]
+    Sub2 --> L1b["invalidateLruByTags\n+ delete keys"]
+```
 
-Subscriber setup is lazy: first cached request on an instance triggers subscribe on a dedicated Redis connection.
+Subscriber setup is lazy: the first cached request on an instance triggers subscribe on a dedicated Redis connection (`setupSubscriber()` in `get()`).
+
+Full invalidation pipeline (L2 deletes, tag timestamps, Pub/Sub): [INVALIDATION.md](INVALIDATION.md).
 
 ## Tag timestamp backstop
 
 Pub/Sub is fire-and-forget. If an instance misses a message (disconnected subscriber, Redis restart), L1 might still hold stale data until LRU TTL expires.
 
 **Backstop:** `updateTags` writes `meta:revalidated-at:{tag}` = invalidation time (ms). `refreshTags` syncs these into an in-memory map before requests. Any entry with `entry.timestamp < tagInvalidationTime` is rejected as stale on both L1 and L2 reads.
+
+```mermaid
+flowchart TD
+    UT["updateTags(tags)"] --> Meta["SET meta:revalidated-at:{tag}\n+ SADD meta:revalidated-tags"]
+    Meta --> Local1["localTagTimestamps.set(tag, now)"]
+    RT["refreshTags() before request"] --> MGET["MGET meta:revalidated-at:*"]
+    MGET --> Local2["Update localTagTimestamps"]
+    GET["get() on L1 or L2 hit"] --> Check{"entry.timestamp <\ntag invalidation time?"}
+    Check -- yes --> Reject["Treat as stale → miss path"]
+    Check -- no --> Return["Return entry"]
+```
 
 Tag metadata TTL defaults to 7 days (`TAG_META_TTL_SECONDS`). Expired metadata is pruned from `meta:revalidated-tags` on refresh.
 

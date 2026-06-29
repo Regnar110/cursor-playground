@@ -1,9 +1,10 @@
-/** @type {import("ts-jest").JestConfigWithTsJest} */
-module.exports = {
+import type { Config } from "jest";
+
+const config: Config = {
   preset: "ts-jest/presets/default-esm",
   testEnvironment: "node",
   roots: ["<rootDir>/__tests__"],
-  testMatch: ["**/*.test.ts", "**/*.test.js"],
+  testMatch: ["**/*.test.ts"],
   moduleFileExtensions: ["ts", "js", "cjs", "json"],
   moduleNameMapper: {
     "^(\\.{1,2}/.*)\\.js$": "$1",
@@ -14,8 +15,10 @@ module.exports = {
       "ts-jest",
       {
         useESM: true,
-        tsconfig: "tsconfig.json",
+        tsconfig: "tsconfig.test.json",
       },
     ],
   },
 };
+
+export default config;

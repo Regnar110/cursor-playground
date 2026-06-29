@@ -2,6 +2,8 @@
 
 Tag-based invalidation removes stale cache entries across L1 (all instances via Pub/Sub) and L2 (Redis entry keys). Tag **timestamps** provide a durable backstop when Pub/Sub messages are missed.
 
+For read-path staleness checks and L1/L2 flow, see [ARCHITECTURE.md](ARCHITECTURE.md). This document focuses on write-path invalidation (`updateTags`, `refreshTags`).
+
 ## Concepts
 
 | Term | Meaning |
