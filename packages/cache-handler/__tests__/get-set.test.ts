@@ -57,10 +57,24 @@ describe("set + get", () => {
     expect(await readAll(entry!.value)).toBe("shared");
   });
 
-  test("wpis po uplywie revalidate jest pomijany (miss)", async () => {
+  test("wpis po uplywie revalidate, ale przed expire, jest nadal serwowany (SWR)", async () => {
     await handler.set(
       CACHE_KEY,
-      Promise.resolve(makeEntry({ revalidate: 1, timestamp: Date.now() - 5000 })),
+      Promise.resolve(
+        makeEntry({ payload: "stale-ok", revalidate: 1, expire: 3600, timestamp: Date.now() - 5000 }),
+      ),
+    );
+
+    const entry = await handler.get(CACHE_KEY, []);
+
+    expect(entry).toBeDefined();
+    expect(await readAll(entry!.value)).toBe("stale-ok");
+  });
+
+  test("wpis po uplywie expire jest pomijany (miss)", async () => {
+    await handler.set(
+      CACHE_KEY,
+      Promise.resolve(makeEntry({ revalidate: 1, expire: 2, timestamp: Date.now() - 5000 })),
     );
 
     expect(await handler.get(CACHE_KEY, [])).toBeUndefined();
