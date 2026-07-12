@@ -1,4 +1,4 @@
-import * as cacheDebug from '../cache-debug.js';
+import * as cacheDebug from '../cacheDebug.js';
 import { lru } from './state.js';
 import type { StoredEntry } from '../types.js';
 

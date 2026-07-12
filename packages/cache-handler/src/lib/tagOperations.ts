@@ -1,4 +1,4 @@
-import * as cacheDebug from '../cache-debug.js';
+import * as cacheDebug from '../cacheDebug.js';
 import { REVALIDATED_TAGS_SET, TAG_META_TTL_SECONDS } from './config.js';
 import { invalidateLruByTags, lruDeleteAndSync } from './l1Cache.js';
 import { publishInvalidation } from './pubsub.js';

@@ -1,5 +1,5 @@
 import { serialize, deserialize } from 'node:v8';
-import * as cacheDebug from '../cache-debug.js';
+import * as cacheDebug from '../cacheDebug.js';
 import { INVALIDATE_CHANNEL, isBuildPhase } from './config.js';
 import { invalidateLruByTags, lruDeleteAndSync } from './l1Cache.js';
 import { createRedis, getRedis } from './redisClient.js';

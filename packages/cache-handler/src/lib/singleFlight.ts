@@ -1,4 +1,4 @@
-import * as cacheDebug from '../cache-debug.js';
+import * as cacheDebug from '../cacheDebug.js';
 import {
     LOCK_TTL_SECONDS,
     RELEASE_LOCK_SCRIPT,
