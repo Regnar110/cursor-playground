@@ -8,7 +8,7 @@ import {
   readAll,
   seedRedisEntry,
   setupHandlerTests,
-} from "./helpers/test-helpers.js";
+} from "./helpers/testHelpers.js";
 
 setupHandlerTests();
 

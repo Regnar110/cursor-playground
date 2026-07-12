@@ -1,5 +1,5 @@
 import { describe, expect, test } from "@jest/globals";
-import { CACHE_KEY, TAG, FakeRedis, handler, makeEntry, setupHandlerTests } from "./helpers/test-helpers.js";
+import { CACHE_KEY, TAG, FakeRedis, handler, makeEntry, setupHandlerTests } from "./helpers/testHelpers.js";
 
 setupHandlerTests();
 

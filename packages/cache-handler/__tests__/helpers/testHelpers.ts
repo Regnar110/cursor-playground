@@ -41,7 +41,7 @@ export let handler: CacheHandler;
 
 export function loadHandler(): CacheHandler {
   jest.resetModules();
-  FakeRedis = requireCjs(join(PKG_ROOT, "__tests__/fake-redis.cjs")) as FakeRedisModule;
+  FakeRedis = requireCjs(join(PKG_ROOT, "__tests__/fakeRedis.cjs")) as FakeRedisModule;
   return requireCjs(join(PKG_ROOT, "src/lib/createHandler.ts")).default as CacheHandler;
 }
 

@@ -8,7 +8,7 @@ const config: Config = {
   moduleFileExtensions: ["ts", "js", "cjs", "json"],
   moduleNameMapper: {
     "^(\\.{1,2}/.*)\\.js$": "$1",
-    "^ioredis$": "<rootDir>/__tests__/fake-redis.cjs",
+    "^ioredis$": "<rootDir>/__tests__/fakeRedis.cjs",
   },
   transform: {
     "^.+\\.tsx?$": [

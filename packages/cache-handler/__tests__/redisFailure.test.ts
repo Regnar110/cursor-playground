@@ -6,7 +6,7 @@ import {
   makeEntry,
   readAll,
   setupHandlerTests,
-} from "./helpers/test-helpers.js";
+} from "./helpers/testHelpers.js";
 
 setupHandlerTests();
 
