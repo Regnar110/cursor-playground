@@ -13,7 +13,7 @@ import {
 setupHandlerTests();
 
 describe("updateTags", () => {
-  test("kasuje wpisy i indeks, ustawia meta z TTL, publikuje Pub/Sub", async () => {
+  test("deletes entries and index, sets meta with TTL, publishes Pub/Sub", async () => {
     const OTHER_TAG = "data:posts:de:de";
     const OTHER_KEY = 'abc:["posts","de"]';
     await handler.set(CACHE_KEY, Promise.resolve(makeEntry()));
@@ -38,7 +38,7 @@ describe("updateTags", () => {
     expect(await handler.get(CACHE_KEY, [])).toBeUndefined();
   });
 
-  test("getExpiration zwraca timestamp invalidacji, 0 dla nieznanych tagow", async () => {
+  test("getExpiration returns invalidation timestamp, 0 for unknown tags", async () => {
     const before = Date.now();
     await handler.updateTags([TAG], {});
 
@@ -48,7 +48,7 @@ describe("updateTags", () => {
 });
 
 describe("Pub/Sub invalidation", () => {
-  test("komunikat Pub/Sub z innej instancji czysci lokalne LRU", async () => {
+  test("Pub/Sub message from another instance clears local LRU", async () => {
     await handler.get("warmup:key", []);
     await handler.set(CACHE_KEY, Promise.resolve(makeEntry({ payload: "stale" })));
 

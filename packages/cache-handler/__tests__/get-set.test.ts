@@ -15,7 +15,7 @@ import {
 setupHandlerTests();
 
 describe("set + get", () => {
-  test("roundtrip: get zwraca zapisany payload i metadane", async () => {
+  test("roundtrip: get returns stored payload and metadata", async () => {
     const ts = Date.now();
     await handler.set(CACHE_KEY, Promise.resolve(makeEntry({ payload: "hello", timestamp: ts })));
 
@@ -28,7 +28,7 @@ describe("set + get", () => {
     expect(entry!.revalidate).toBe(300);
   });
 
-  test('zapisuje w Redis pod kluczem z ";" zamiast ":" i indeksuje tag 1:1', async () => {
+  test('stores in Redis under semicolon-encoded key and indexes tag 1:1', async () => {
     await handler.set(CACHE_KEY, Promise.resolve(makeEntry()));
 
     expect(FakeRedis.state.store.has(ENCODED_KEY)).toBe(true);
@@ -38,7 +38,7 @@ describe("set + get", () => {
     expect(FakeRedis.state.ttls.get(`index:${TAG}`)).toBe(3660);
   });
 
-  test("payload w Redis zawiera _meta do debugowania w Redis Insight", async () => {
+  test("Redis payload includes _meta for Redis Insight debugging", async () => {
     await handler.set(CACHE_KEY, Promise.resolve(makeEntry()));
 
     const raw = v8.deserialize(FakeRedis.state.store.get(ENCODED_KEY)!) as {
@@ -47,7 +47,7 @@ describe("set + get", () => {
     expect(raw._meta).toMatchObject({ layer: "data", resource: "posts", locale: "pl/pl" });
   });
 
-  test("inna instancja (swiezy proces) czyta wpis z Redis", async () => {
+  test("another instance (fresh process) reads entry from Redis", async () => {
     await handler.set(CACHE_KEY, Promise.resolve(makeEntry({ payload: "shared" })));
 
     const handlerB = loadHandler();
@@ -57,7 +57,7 @@ describe("set + get", () => {
     expect(await readAll(entry!.value)).toBe("shared");
   });
 
-  test("wpis po uplywie revalidate jest pomijany (miss)", async () => {
+  test("entry past revalidate window is skipped (miss)", async () => {
     await handler.set(
       CACHE_KEY,
       Promise.resolve(makeEntry({ revalidate: 1, timestamp: Date.now() - 5000 })),

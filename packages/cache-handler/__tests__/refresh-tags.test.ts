@@ -4,7 +4,7 @@ import { FakeRedis, TAG, handler, makeEntry, setupHandlerTests } from "./helpers
 setupHandlerTests();
 
 describe("refreshTags", () => {
-  test("synchronizuje timestampy z Redis i przycina wygasle tagi", async () => {
+  test("syncs timestamps from Redis and prunes expired tags", async () => {
     const STALE_TAG = "data:old:xx:yy";
     FakeRedis.state.sets.set("meta:revalidated-tags", new Set([TAG, STALE_TAG]));
     FakeRedis.state.store.set(`meta:revalidated-at:${TAG}`, Buffer.from("12345"));

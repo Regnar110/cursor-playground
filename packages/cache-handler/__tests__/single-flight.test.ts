@@ -13,7 +13,7 @@ import {
 setupHandlerTests();
 
 describe("single-flight", () => {
-  test("miss przejmuje lock (wartosc = instanceId) i zwraca undefined", async () => {
+  test("miss acquires lock (value = instanceId) and returns undefined", async () => {
     const result = await handler.get(CACHE_KEY, []);
 
     expect(result).toBeUndefined();
@@ -22,14 +22,14 @@ describe("single-flight", () => {
     expect(FakeRedis.state.ttls.get(`lock:${ENCODED_KEY}`)).toBe(30);
   });
 
-  test("set() zwalnia locka tej instancji", async () => {
+  test("set() releases this instance's lock", async () => {
     await handler.get(CACHE_KEY, []);
     await handler.set(CACHE_KEY, Promise.resolve(makeEntry()));
 
     expect(FakeRedis.state.store.has(`lock:${ENCODED_KEY}`)).toBe(false);
   });
 
-  test("nie kasuje locka nalezacego do innej instancji (compare-and-delete)", async () => {
+  test("does not delete lock owned by another instance (compare-and-delete)", async () => {
     await handler.get(CACHE_KEY, []);
     FakeRedis.state.store.set(`lock:${ENCODED_KEY}`, Buffer.from("pid-999-aaaaaaaaaaaa"));
     await handler.set(CACHE_KEY, Promise.resolve(makeEntry()));
@@ -39,7 +39,7 @@ describe("single-flight", () => {
     );
   });
 
-  test("czeka na wynik instancji trzymajacej lock zamiast renderowac", async () => {
+  test("waits for lock holder result instead of rendering", async () => {
     FakeRedis.state.store.set(`lock:${ENCODED_KEY}`, Buffer.from("pid-999-aaaaaaaaaaaa"));
 
     const getPromise = handler.get(CACHE_KEY, []);

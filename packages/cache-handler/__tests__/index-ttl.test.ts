@@ -3,8 +3,8 @@ import { CACHE_KEY, TAG, FakeRedis, handler, makeEntry, setupHandlerTests } from
 
 setupHandlerTests();
 
-describe("TTL indeksow (EXPIRE NX + GT)", () => {
-  test("krotszy wpis nie skraca TTL indeksu, dluzszy wydluza", async () => {
+describe("index TTL (EXPIRE NX + GT)", () => {
+  test("shorter entry does not shorten index TTL, longer entry extends it", async () => {
     await handler.set(CACHE_KEY, Promise.resolve(makeEntry({ expire: 3600 })));
     expect(FakeRedis.state.ttls.get(`index:${TAG}`)).toBe(3660);
 

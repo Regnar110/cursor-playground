@@ -10,12 +10,12 @@ import {
 
 setupHandlerTests();
 
-describe("odpornosc na awarie Redis", () => {
+describe("Redis failure resilience", () => {
   beforeEach(() => {
     jest.spyOn(console, "warn").mockImplementation(() => {});
   });
 
-  test("bez polaczenia handler dziala na samym LRU", async () => {
+  test("without connection handler runs on LRU only", async () => {
     FakeRedis.state.failConnect = true;
 
     await handler.set(CACHE_KEY, Promise.resolve(makeEntry({ payload: "lru-only" })));
@@ -25,7 +25,7 @@ describe("odpornosc na awarie Redis", () => {
     expect(FakeRedis.state.store.size).toBe(0);
   });
 
-  test('po "end" klient jest odtwarzany po cooldownie (fix reconnectu)', async () => {
+  test('after "end" client is recreated after cooldown (reconnect fix)', async () => {
     await handler.set(CACHE_KEY, Promise.resolve(makeEntry()));
     const clientsBefore = FakeRedis.state.instances.length;
 
