@@ -38,8 +38,8 @@
  * - `END`      — Redis connection died
  */
 
-import { getRedis } from './lib/redis-client.js';
-import { redisEntryKeyNamespacePrefix } from './lib/redis-keys.ts'; 
+import { getRedis } from './lib/redisClient.js';
+import { redisEntryKeyNamespacePrefix } from './lib/redisKeys.js'; 
 import type { LRUCache } from 'lru-cache';
 import type { CacheLayer, DebugEvent, DebugEventFields, StoredEntry } from './types.js';
 

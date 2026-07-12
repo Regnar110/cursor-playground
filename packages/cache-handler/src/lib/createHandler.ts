@@ -7,8 +7,8 @@ import {
 } from './entry.ts';
 import { lruSetAndSync } from './l1Cache.ts';
 import { setupSubscriber } from './pubsub.ts';
-import { getRedis, redisUnavailableUntil } from './redis-client.ts';
-import { redisEntryKey, redisIndexKey, redisLockKey } from './redis-keys.ts';
+import { getRedis, redisUnavailableUntil } from './redisClient.ts';
+import { redisEntryKey, redisIndexKey, redisLockKey } from './redisKeys.ts';
 import {
     LOCK_TTL_SECONDS,
     releaseRenderLock,
