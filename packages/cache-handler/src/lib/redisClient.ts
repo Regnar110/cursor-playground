@@ -1,5 +1,5 @@
 import Redis, { type RedisOptions } from "ioredis";
-import * as cacheDebug from "../cacheDebug.js";
+import * as cacheDebug from "../cache-debug.js";
 import { envInt, isBuildPhase, REDIS_COOLDOWN_MS } from "./config.js";
 import {
   redisClient,

@@ -1,4 +1,4 @@
-import * as cacheDebug from '../cacheDebug.ts';
+import * as cacheDebug from '../cache-debug.js';
 import {
     LOCK_TTL_SECONDS,
     RELEASE_LOCK_SCRIPT,
@@ -6,7 +6,7 @@ import {
     SINGLE_FLIGHT_POLL_MS,
 } from './config.js';
 import { deserializeEntry } from './entry.js';
-import { redisEntryKey, redisLockKey } from './redisKeys.ts';
+import { redisEntryKey, redisLockKey } from './redisKeys.js';
 import { instanceId } from './state.js';
 import { isEntryFresh } from './stale.js';
 import type { Redis } from 'ioredis';

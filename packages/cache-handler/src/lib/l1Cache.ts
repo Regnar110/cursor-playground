@@ -1,6 +1,6 @@
-import * as cacheDebug from '../cacheDebug.js';
-import { lru } from './state.ts';
-import type { StoredEntry } from '../types.ts';
+import * as cacheDebug from '../cache-debug.js';
+import { lru } from './state.js';
+import type { StoredEntry } from '../types.js';
 
 export function lruSetAndSync(entryKey: string, entry: StoredEntry): void {
     lru.set(entryKey, entry);

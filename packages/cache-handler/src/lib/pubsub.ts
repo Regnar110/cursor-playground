@@ -1,7 +1,7 @@
 import { serialize, deserialize } from 'node:v8';
-import * as cacheDebug from '../cacheDebug.ts';
+import * as cacheDebug from '../cache-debug.js';
 import { INVALIDATE_CHANNEL, isBuildPhase } from './config.js';
-import { invalidateLruByTags, lruDeleteAndSync } from './l1Cache.ts';
+import { invalidateLruByTags, lruDeleteAndSync } from './l1Cache.js';
 import { createRedis, getRedis } from './redisClient.js';
 import { lru, redisSubClient, redisSubConnecting, setRedisSubClient, setRedisSubConnecting } from './state.js';
 

@@ -9,4 +9,4 @@
  * - Tag timestamps (meta:revalidated-at:*) — persistent backstop when an instance
  *   misses a Pub/Sub message (no connection, Redis restart, etc.)
  */
-export { default } from './lib/createHandler.ts';
+export { default } from './lib/createHandler.js';

@@ -1,10 +1,10 @@
-import * as cacheDebug from '../cacheDebug.ts';
-import { REVALIDATED_TAGS_SET, TAG_META_TTL_SECONDS } from './config.ts';
-import { invalidateLruByTags, lruDeleteAndSync } from './l1Cache.ts';
-import { publishInvalidation } from './pubsub.ts';
-import { getRedis } from './redisClient.ts';
-import { redisIndexKey, redisRevalidatedAtKey } from './redisKeys.ts';
-import { localTagTimestamps } from './state.ts';
+import * as cacheDebug from '../cache-debug.js';
+import { REVALIDATED_TAGS_SET, TAG_META_TTL_SECONDS } from './config.js';
+import { invalidateLruByTags, lruDeleteAndSync } from './l1Cache.js';
+import { publishInvalidation } from './pubsub.js';
+import { getRedis } from './redisClient.js';
+import { redisIndexKey, redisRevalidatedAtKey } from './redisKeys.js';
+import { localTagTimestamps } from './state.js';
 
 export async function refreshTags(): Promise<void> {
     try {

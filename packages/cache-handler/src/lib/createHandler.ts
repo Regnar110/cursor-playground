@@ -1,30 +1,30 @@
-import * as cacheDebug from '../cacheDebug.ts';
+import * as cacheDebug from '../cache-debug.js';
 import {
     cloneEntryForReturn,
     deserializeEntry,
     readStreamToBuffer,
     serializeEntry,
-} from './entry.ts';
-import { lruSetAndSync } from './l1Cache.ts';
-import { setupSubscriber } from './pubsub.ts';
-import { getRedis, redisUnavailableUntil } from './redisClient.ts';
-import { redisEntryKey, redisIndexKey, redisLockKey } from './redisKeys.ts';
+} from './entry.js';
+import { lruSetAndSync } from './l1Cache.js';
+import { setupSubscriber } from './pubsub.js';
+import { getRedis, redisUnavailableUntil } from './redisClient.js';
+import { redisEntryKey, redisIndexKey, redisLockKey } from './redisKeys.js';
 import {
     LOCK_TTL_SECONDS,
     releaseRenderLock,
     tryAcquireRenderLock,
     waitForRemoteEntry,
-} from './single-flight.ts';
+} from './singleFlight.js';
 import {
     instanceId,
     localTagTimestamps,
     lru,
     pendingSets,
     redisStatusSnapshot,
-} from './state.ts';
-import { isEntryFresh } from './stale.ts';
-import { getExpiration, refreshTags, updateTags } from './tag-operations.ts';
-import type { CacheEntry, CacheHandler, StoredEntry } from '../types.ts';
+} from './state.js';
+import { isEntryFresh } from './stale.js';
+import { getExpiration, refreshTags, updateTags } from './tagOperations.js';
+import type { CacheEntry, CacheHandler, StoredEntry } from '../types.js';
 
 cacheDebug.registerDebugHooks(
     lru,
