@@ -1,82 +1,127 @@
-import crypto from "node:crypto";
-import { LRUCache } from "lru-cache";
-import { envInt, isBuildPhase } from "./config.js";
-import type { StoredEntry } from "../types.js";
-import type { Redis } from "ioredis";
+import * as cacheDebug from '../cacheDebug.ts';
+import { REVALIDATED_TAGS_SET, TAG_META_TTL_SECONDS } from './config.ts';
+import { invalidateLruByTags, lruDeleteAndSync } from './l1Cache.ts';
+import { publishInvalidation } from './pubsub.ts';
+import { getRedis } from './redisClient.ts';
+import { redisIndexKey, redisRevalidatedAtKey } from './redisKeys.ts';
+import { localTagTimestamps } from './state.ts';
 
-export const instanceId = `pid-${process.pid}-${crypto.randomBytes(6).toString("hex")}`;
+export async function refreshTags(): Promise<void> {
+    try {
+        const redis = await getRedis();
+        if (!redis) {
+            return;
+        }
 
-export const DEBUG_BOX = process.env.HOSTNAME?.trim() || `local-${process.pid}`;
+        const tagKeys = await redis.smembers(REVALIDATED_TAGS_SET);
+        if (tagKeys.length === 0) {
+            return;
+        }
 
-export const lru = new LRUCache<string, StoredEntry>({
-  max: envInt("REMOTE_CACHE_LRU_MAX_ENTRIES", 500),
-  maxSize: envInt("REMOTE_CACHE_LRU_MAX_SIZE_MB", 50) * 1024 * 1024,
-  sizeCalculation: (entry) =>
-    entry._size ?? envInt("REMOTE_CACHE_LRU_DEFAULT_ENTRY_SIZE_BYTES", 1024),
-  ttl: envInt("REMOTE_CACHE_LRU_TTL_MS", 15_000),
-});
+        const values = await redis.mget(tagKeys.map(tag => redisRevalidatedAtKey(tag)));
+        const expiredTags: string[] = [];
+        let synced = 0;
 
-export const pendingSets = new Map<string, Promise<void>>();
+        for (let i = 0; i < tagKeys.length; i++) {
+            if (values[i]) {
+                localTagTimestamps.set(tagKeys[i], Number(values[i]));
+                synced++;
+            } else {
+                expiredTags.push(tagKeys[i]);
+            }
+        }
 
-export const localTagTimestamps = new Map<string, number>();
+        if (expiredTags.length > 0) {
+            for (const tag of expiredTags) {
+                localTagTimestamps.delete(tag);
+            }
+            await redis.srem(REVALIDATED_TAGS_SET, ...expiredTags);
+        }
 
-export let redisClient: Redis | null = null;
-export let redisSubClient: Redis | null = null;
-export let redisConnecting: Promise<Redis> | null = null;
-export let redisSubConnecting: Promise<void> | null = null;
-export let redisUnavailableUntil = 0;
-
-export function setRedisClient(client: Redis | null): void {
-  redisClient = client;
+        cacheDebug.log(
+            'REFRESH',
+            'SYNC',
+            'Synchronized invalidation timestamps from Redis before request',
+            {
+                expiredTags: expiredTags.length ? expiredTags : [],
+                expiredTagsRemoved: expiredTags.length,
+                syncedTags: synced,
+            },
+        );
+    } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        console.error('[remote-cache-handler] refreshTags error:', message);
+    }
 }
 
-export function setRedisConnecting(connecting: Promise<Redis> | null): void {
-  redisConnecting = connecting;
+export async function getExpiration(tags: string[]): Promise<number> {
+    const timestamps = tags.map(tag => localTagTimestamps.get(tag) ?? 0);
+    return Math.max(...timestamps, 0);
 }
 
-export function setRedisSubClient(client: Redis | null): void {
-  redisSubClient = client;
-}
+export async function updateTags(
+    tags: string[],
+    _durations?: { expire?: number },
+): Promise<void> {
+    const now = Date.now();
 
-export function setRedisSubConnecting(connecting: Promise<void> | null): void {
-  redisSubConnecting = connecting;
-}
+    for (const tag of tags) {
+        localTagTimestamps.set(tag, now);
+    }
 
-export function setRedisUnavailableUntil(until: number): void {
-  redisUnavailableUntil = until;
-}
+    invalidateLruByTags(tags);
 
-export function resetMainRedisConnection(cooldownUntil: number): void {
-  redisClient = null;
-  redisConnecting = null;
-  redisUnavailableUntil = cooldownUntil;
-}
+    try {
+        const redis = await getRedis();
+        if (!redis) {
+            cacheDebug.log(
+                'INVALIDATE',
+                'CLEAR',
+                'Invalidated tags locally (L1 + timestamps) — Redis unavailable, Pub/Sub skipped',
+                { redis: 'no', tags },
+            );
+            await publishInvalidation({ tags });
+            return;
+        }
 
-export function resetSubRedisConnection(): void {
-  redisSubClient = null;
-  redisSubConnecting = null;
-}
+        const keysToDelete = new Set<string>();
 
-export function redisStatusSnapshot() {
-  const cooldownMs =
-    redisUnavailableUntil > Date.now() ? redisUnavailableUntil - Date.now() : null;
-  let status = "disabled";
-  if (isBuildPhase || !process.env.REDIS_HOST) {
-    status = "disabled";
-  } else if (cooldownMs) {
-    status = "cooldown (LRU only)";
-  } else if (redisClient?.status === "ready") {
-    status = "connected";
-  } else if (redisConnecting) {
-    status = "connecting";
-  } else {
-    status = "disconnected";
-  }
-  return {
-    status,
-    cooldownMs,
-    pubSubReady: redisSubClient?.status === "ready",
-  };
-}
+        for (const tag of tags) {
+            const keys = await redis.smembers(redisIndexKey(tag));
+            for (const key of keys) {
+                keysToDelete.add(key);
+                lruDeleteAndSync(key);
+            }
+        }
 
-export { isBuildPhase };
+        const pipeline = redis.multi();
+
+        for (const tag of tags) {
+            pipeline.set(redisRevalidatedAtKey(tag), String(now), 'EX', TAG_META_TTL_SECONDS);
+            pipeline.sadd(REVALIDATED_TAGS_SET, tag);
+            pipeline.del(redisIndexKey(tag));
+        }
+
+        for (const key of keysToDelete) {
+            pipeline.del(key);
+        }
+
+        await pipeline.exec();
+        await publishInvalidation({ keys: [...keysToDelete], tags });
+
+        cacheDebug.log(
+            'INVALIDATE',
+            'CLEAR',
+            `Invalidated ${tags.length} tag(s) — deleted ${keysToDelete.size} Redis entries and broadcast Pub/Sub`,
+            {
+                deletedEntries: keysToDelete.size,
+                metaTtlSec: TAG_META_TTL_SECONDS,
+                T_invalid: cacheDebug.formatTime(now),
+                tags,
+            },
+        );
+    } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        console.error('[remote-cache-handler] updateTags error:', message);
+    }
+}
