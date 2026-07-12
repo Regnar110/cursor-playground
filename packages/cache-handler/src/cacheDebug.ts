@@ -302,15 +302,15 @@ export function formatTags(tags: string[] | undefined): string {
 }
 
 export function describeStaleReason(
-    entry: { timestamp: number; revalidate?: number; tags?: string[] },
+    entry: { timestamp: number; expire?: number; tags?: string[] },
     tagTimestamps: Map<string, number>,
     softTags: string[] = [],
 ): string {
     const reasons: string[] = [];
     const now = Date.now();
 
-    if (entry.revalidate != null && now > entry.timestamp + entry.revalidate * 1000) {
-        reasons.push(`expired (revalidate ${entry.revalidate}s exceeded)`);
+    if (entry.expire != null && now > entry.timestamp + entry.expire * 1000) {
+        reasons.push(`expired (expire ${entry.expire}s exceeded)`);
     }
 
     for (const tag of entry.tags ?? []) {

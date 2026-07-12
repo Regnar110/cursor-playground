@@ -61,10 +61,25 @@ describe('set + get', () => {
         expect(await readAll(entry.value)).toBe('shared');
     });
 
-    test('entry past revalidate window is skipped (miss)', async () => {
+    test('entry past revalidate but before expire is still served (SWR)', async () => {
         await handler.set(
             CACHE_KEY,
-            Promise.resolve(makeEntry({ revalidate: 1, timestamp: Date.now() - 5000 })),
+            Promise.resolve(
+                makeEntry({ payload: 'stale-ok', revalidate: 1, expire: 3600, timestamp: Date.now() - 5000 }),
+            ),
+        );
+
+        const entry = await handler.get(CACHE_KEY, []);
+        if (!entry) return;
+
+        expect(entry).toBeDefined();
+        expect(await readAll(entry.value)).toBe('stale-ok');
+    });
+
+    test('entry past expire window is skipped (miss)', async () => {
+        await handler.set(
+            CACHE_KEY,
+            Promise.resolve(makeEntry({ revalidate: 1, expire: 2, timestamp: Date.now() - 5000 })),
         );
 
         expect(await handler.get(CACHE_KEY, [])).toBeUndefined();

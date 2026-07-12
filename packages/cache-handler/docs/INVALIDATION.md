@@ -13,13 +13,17 @@ For read-path staleness checks and L1/L2 flow, see [ARCHITECTURE.md](ARCHITECTUR
 | **Invalidation timestamp** | Milliseconds stored at `meta:revalidated-at:{tag}` when `updateTags` runs |
 | **Local tag map** | In-memory `Map<tag, timestamp>` synced by `refreshTags()` |
 
-An entry is **stale** if any of the following is true (`src/handler/stale.ts`):
+An entry is **rejected** if any of the following is true (`src/handler/stale.ts`):
 
-1. **Revalidate expired** — `Date.now() > entry.timestamp + entry.revalidate * 1000`
+1. **Expired** — `Date.now() > entry.timestamp + entry.expire * 1000`
 2. **Hard tag invalidated** — any `entry.tags` value has `localTagTimestamps.get(tag) > entry.timestamp`
 3. **Soft tag invalidated** — any `softTags` value has `localTagTimestamps.get(tag) > entry.timestamp`
 
-Stale entries are never returned from L1 or L2.
+Rejected entries are never returned from L1 or L2.
+
+Entries past `revalidate` but before `expire` **are** returned (stale-while-revalidate):
+Next.js compares `timestamp + revalidate` itself and triggers a background refresh while
+serving the stale entry.
 
 ## Invalidation flow
 

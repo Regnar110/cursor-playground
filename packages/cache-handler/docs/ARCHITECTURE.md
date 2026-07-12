@@ -61,7 +61,7 @@ Every read path calls `isEntryFresh()` in `src/handler/stale.ts`. An entry is re
 
 ```mermaid
 flowchart TD
-    Entry["Candidate entry"] --> Expired{"Revalidate\nexpired?"}
+    Entry["Candidate entry"] --> Expired{"Expire window\nexceeded?"}
     Expired -- yes --> Stale["Reject as stale"]
     Expired -- no --> Hard{"Any hard tag\ninvalidated?"}
     Hard -- yes --> Stale
@@ -69,18 +69,18 @@ flowchart TD
     Soft -- yes --> Stale
     Soft -- no --> Fresh["Return entry"]
 
-    Expired -.- ExpRule["now > timestamp + revalidate × 1000"]
+    Expired -.- ExpRule["now > timestamp + expire × 1000"]
     Hard -.- HardRule["localTagTimestamps(tag) > entry.timestamp\nfor tag in entry.tags"]
     Soft -.- SoftRule["localTagTimestamps(tag) > entry.timestamp\nfor tag in softTags"]
 ```
 
 | Check | Input | Rule |
 |-------|-------|------|
-| Revalidate window | `entry.timestamp`, `entry.revalidate` | `Date.now() > timestamp + revalidate × 1000` |
+| Expire window | `entry.timestamp`, `entry.expire` | `Date.now() > timestamp + expire × 1000` |
 | Hard tags | `entry.tags` | Tag invalidation time in local map is newer than entry creation |
 | Soft tags | `get(..., softTags)` | Same as hard tags, but tags are not stored on the entry |
 
-Stale entries are never returned from L1 or L2. See [INVALIDATION.md](INVALIDATION.md) for how tag timestamps are written and synced.
+Rejected entries are never returned from L1 or L2. Entries past `revalidate` but before `expire` are returned as-is — Next.js detects the exceeded `revalidate` window itself, serves the stale entry, and triggers a background refresh (stale-while-revalidate). See [INVALIDATION.md](INVALIDATION.md) for how tag timestamps are written and synced.
 
 ## `get()` — control flow
 
