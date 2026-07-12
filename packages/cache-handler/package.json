@@ -3,13 +3,13 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "main": "./dist/remote-handler.js",
-  "types": "./dist/remote-handler.d.ts",
+  "main": "./dist/remoteHandler.js",
+  "types": "./dist/remoteHandler.d.ts",
   "exports": {
     ".": {
-      "types": "./dist/remote-handler.d.ts",
-      "import": "./dist/remote-handler.js",
-      "require": "./dist/remote-handler.js"
+      "types": "./dist/remoteHandler.d.ts",
+      "import": "./dist/remoteHandler.js",
+      "require": "./dist/remoteHandler.js"
     }
   },
   "scripts": {
