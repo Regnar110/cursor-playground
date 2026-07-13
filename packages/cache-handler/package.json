@@ -10,6 +10,11 @@
       "types": "./dist/remoteHandler.d.ts",
       "import": "./dist/remoteHandler.js",
       "require": "./dist/remoteHandler.js"
+    },
+    "./isr": {
+      "types": "./dist/isrHandler.d.ts",
+      "import": "./dist/isrHandler.js",
+      "require": "./dist/isrHandler.js"
     }
   },
   "scripts": {

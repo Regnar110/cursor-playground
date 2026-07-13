@@ -53,7 +53,23 @@ After a connection failure the handler stays in L1-only mode for **30 seconds**
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `TAG_META_TTL_SECONDS` | `604800` (7 days) | TTL of tag invalidation timestamps in Redis |
+| `TAG_META_TTL_SECONDS` | `604800` (7 days) | TTL of tag invalidation timestamps in Redis (remote handler) and ISR tag records |
+
+## ISR cache handler
+
+Used by `@tme/cache-handler/isr` (`cacheHandler` in Next.js config). See
+[07 — ISR cache handler](07-isr-cache-handler.md).
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `ISR_ENTRY_TTL_SECONDS` | `86400` (24 h) | Redis TTL for ISR entries when the route provides no explicit `expire` |
+
+Register alongside the remote handler:
+
+```ts
+cacheHandler: require.resolve("@tme/cache-handler/isr"),
+cacheMaxMemorySize: 0,
+```
 
 ## Debug telemetry
 

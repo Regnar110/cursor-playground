@@ -1,7 +1,7 @@
 import { defineConfig } from "tsup";
 
 export default defineConfig({
-  entry: ["src/remoteHandler.ts"],
+  entry: ["src/remoteHandler.ts", "src/isrHandler.ts"],
   format: ["esm"],
   dts: true,
   clean: true,

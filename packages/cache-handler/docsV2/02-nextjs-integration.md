@@ -93,3 +93,18 @@ immediately.
 - `refreshTags` — Next.js calls this handler method before serving a request;
   the handler then synchronizes its local knowledge of invalidated tags with
   Redis. This happens automatically; the application does nothing.
+
+## Full route cache — a separate handler
+
+The remote handler covers only `use cache: remote` entries. Next.js also caches
+assembled page output (HTML shell, RSC payload) in the **incremental cache**,
+managed by a different config field: `cacheHandler` (singular).
+
+Without a custom `cacheHandler`, that layer lives on each instance's local disk.
+In a multi-instance deployment, users see different page snapshots depending on
+which instance the load balancer picks.
+
+The package provides `@tme/cache-handler/isr` for this layer — it stores route
+cache entries in Redis under the `isr:entry:*` namespace. See
+[07 — ISR cache handler](07-isr-cache-handler.md) for the full flow, invalidation
+semantics and how it interacts with the remote handler.
