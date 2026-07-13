@@ -57,6 +57,7 @@ function restoreLegacyValue(value: Record<string, unknown>): CacheValue {
       const segments = value.segmentData as Record<string, string> | undefined;
       return {
         ...value,
+        kind: 'APP_PAGE',
         rscData: fromBase64(value.rscData),
         segmentData: segments
           ? new Map(Object.entries(segments).map(([path, b64]) => [path, Buffer.from(b64, 'base64')]))
@@ -64,10 +65,18 @@ function restoreLegacyValue(value: Record<string, unknown>): CacheValue {
       } as CacheValue;
     }
     case 'APP_ROUTE':
-      return { ...value, body: fromBase64(value.body) } as CacheValue;
+      return {
+        ...value,
+        kind: 'APP_ROUTE',
+        body: fromBase64(value.body),
+      } as CacheValue;
     case 'IMAGE':
-      return { ...value, buffer: fromBase64(value.buffer) } as CacheValue;
+      return {
+        ...value,
+        kind: 'IMAGE',
+        buffer: fromBase64(value.buffer),
+      } as CacheValue;
     default:
-      return value as CacheValue;
+      return { ...value, kind: String(value.kind ?? 'UNKNOWN') } as CacheValue;
   }
 }
