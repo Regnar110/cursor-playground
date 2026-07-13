@@ -72,41 +72,34 @@ To jest typowy podział B2B/B2C — **nie cache'ujemy „całej strony na max”
 
 ---
 
-## 4. Listing kategorii (schemat — brak screena z powodu Cloudflare)
+## 4. Listing kategorii — Elementy pasywne
 
-Strona listingu (np. „Kondensatory”) ma ten sam schemat co większość e-commerce:
+![Listing kategorii — podział warstw](./assets/tme-eu-cache/02-category-annotated.png)
+
+| Obszar | Warstwa | Uzasadnienie |
+|--------|---------|--------------|
+| Header, menu | **POWŁOKA** | Wspólny layout — ISR |
+| Lewe drzewo kategorii | **REMOTE T** | Struktura katalogu, rzadka zmiana → `days` |
+| Opis SEO, nagłówek | **REMOTE T** | Treść redakcyjna |
+| Siatka podkategorii (Rezystory, Termistory…) | **REMOTE T** | Listing — scope: `categoryId` w kluczu |
+| Koszyk / konto w headerze | **DYNAMIC W** | Sesja użytkownika |
+
+Przy **15 podach** bez Redis: każdy pod przy wejściu w „Elementy pasywne” robi własny fetch. Z Redis: jeden fetch, reszta hit.
 
 ```mermaid
 flowchart TB
     subgraph shell ["POWŁOKA ISR (zielony)"]
         H[Header + search]
-        F[Footer]
     end
 
     subgraph remote ["REMOTE T (niebieski)"]
-        CAT[Nazwa kategorii + opis SEO]
-        FIL[Filtry — struktura]
-        LIST[Lista produktów — strona 1..N]
-    end
-
-    subgraph live ["LIVE L (pomarańczowy)"]
-        PRICE[Kolumna ceny w tabeli]
-        STOCK[Dostępność]
+        CAT[Nazwa + opis SEO]
+        TREE[Drzewo kategorii]
+        GRID[Podkategorie / listing]
     end
 
     shell --> remote
-    remote --> live
 ```
-
-| Element listingu | Warstwa | cacheLife |
-|------------------|---------|-----------|
-| Nagłówek kategorii, opis | REMOTE T | `days` |
-| Drzewo filtrów (metadane) | REMOTE T | `hours` |
-| Lista SKU (bez cen) | REMOTE T | `hours` |
-| Ceny w wierszach | LIVE L | `minutes` lub osobny komponent |
-| Sortowanie / paginacja | REMOTE T | scope = `categoryId + page + sort` w kluczu |
-
-Przy **15 podach** bez Redis: każdy pod przy wejściu w „Kondensatory” robi własny fetch listy. Z Redis: **jeden** fetch, reszta serwuje hit.
 
 ---
 
@@ -262,7 +255,8 @@ Koszt z Redis: 1 fetch + współdzielony wynik
 | [00-legend.png](./assets/tme-eu-cache/00-legend.png) | Legenda kolorów |
 | [01-home-annotated.png](./assets/tme-eu-cache/01-home-annotated.png) | Strona główna (viewport) |
 | [01-home-full-annotated.png](./assets/tme-eu-cache/01-home-full-annotated.png) | Strona główna (pełna) |
+| [02-category-annotated.png](./assets/tme-eu-cache/02-category-annotated.png) | Listing kategorii |
 | [03-product-annotated.png](./assets/tme-eu-cache/03-product-annotated.png) | Karta produktu |
 | [STRATEGIA-CACHE.md](./STRATEGIA-CACHE.md) | Skrót reguł dla devów (kontrakty T/W/L) |
 
-*Screeny oryginalne (bez oznaczeń): `assets/tme-eu-cache/01-home.png`, `03-product.png`.*
+*Screeny bez Cookiebota — przechwycone po „Zezwól na wszystkie”, nawigacja home → kategoria → produkt w jednej sesji.*

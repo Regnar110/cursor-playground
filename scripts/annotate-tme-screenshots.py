@@ -62,7 +62,6 @@ def annotate_home(src: Path, dst: Path):
         ((0, 175, 248, h), "remote_t", "T · drzewo kategorii (remote, dni)"),
         ((248, 175, w - 20, 520), "remote_t", "T · hero / promocje (remote, godziny)"),
         ((248, 520, w, h), "remote_t", "T · aktualności (remote, godziny)"),
-        ((w // 2 - 200, h // 2 - 120, w // 2 + 200, h // 2 + 140), "client", "KLIENT · modal cookies"),
     ]
     for box, key, label in zones:
         draw_zone(draw, box, key, label, fnt)
@@ -108,7 +107,6 @@ def annotate_product(src: Path, dst: Path):
         ((900, 250, w - 20, 480), "live", "L · cennik progowy + stock (minuty)"),
         ((900, 480, w - 20, 560), "dynamic_w", "W · dodaj do koszyka"),
         ((40, 530, 520, 580), "remote_t", "T · dokumentacja PDF (remote, dni)"),
-        ((w // 2 - 180, h // 2 - 100, w // 2 + 180, h // 2 + 120), "client", "KLIENT · cookies"),
     ]
     for box, key, label in zones:
         draw_zone(draw, box, key, label, fnt)
@@ -128,6 +126,41 @@ def annotate_product(src: Path, dst: Path):
         ld.rectangle([x, 10, x + 14, 24], fill=c)
         ld.text((x + 18, 8), text, fill=(0, 0, 0), font=lf)
         x += 120
+
+    final = Image.new("RGB", (w, h + 36), (255, 255, 255))
+    final.paste(out.convert("RGB"), (0, 0))
+    final.paste(leg.convert("RGB"), (0, h))
+    final.save(dst, quality=92)
+    print(f"  → {dst.name}")
+
+
+def annotate_category(src: Path, dst: Path):
+    img = Image.open(src).convert("RGBA")
+    overlay = Image.new("RGBA", img.size, (0, 0, 0, 0))
+    draw = ImageDraw.Draw(overlay)
+    fnt = font(13)
+    w, h = img.size
+
+    zones = [
+        ((0, 0, w, 175), "shell", "POWŁOKA · header"),
+        ((0, 175, 248, h), "remote_t", "T · drzewo kategorii (remote, dni)"),
+        ((248, 175, w, 280), "remote_t", "T · opis SEO kategorii"),
+        ((248, 280, w, h - 40), "remote_t", "T · siatka podkategorii / listing"),
+        ((w - 200, 58, w, 95), "dynamic_w", "W · koszyk / konto"),
+    ]
+    for box, key, label in zones:
+        draw_zone(draw, box, key, label, fnt)
+
+    out = Image.alpha_composite(img, overlay)
+    leg = Image.new("RGBA", (w, 36), (255, 255, 255, 240))
+    ld = ImageDraw.Draw(leg)
+    lf = font(11)
+    x = 8
+    for text, key in [("POWŁOKA ISR", "shell"), ("REMOTE T", "remote_t"), ("DYNAMIC W", "dynamic_w")]:
+        c = BORDER[key][:3]
+        ld.rectangle([x, 10, x + 14, 24], fill=c)
+        ld.text((x + 18, 8), text, fill=(0, 0, 0), font=lf)
+        x += 140
 
     final = Image.new("RGB", (w, h + 36), (255, 255, 255))
     final.paste(out.convert("RGB"), (0, 0))
@@ -198,6 +231,7 @@ def make_legend_card(dst: Path):
 if __name__ == "__main__":
     print("Annotating screenshots...")
     annotate_home(ASSETS / "01-home.png", ASSETS / "01-home-annotated.png")
+    annotate_category(ASSETS / "02-category.png", ASSETS / "02-category-annotated.png")
     annotate_product(ASSETS / "03-product.png", ASSETS / "03-product-annotated.png")
     annotate_home_full(ASSETS / "01-home-full.png", ASSETS / "01-home-full-annotated.png")
     make_legend_card(ASSETS / "00-legend.png")
