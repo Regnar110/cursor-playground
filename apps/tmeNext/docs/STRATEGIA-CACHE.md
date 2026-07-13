@@ -1,7 +1,5 @@
 # Strategia cache — dla zespołu
 
-> Prezentacja z screenami tme.eu i argumentacją dla backendu: [CACHE-DLA-ZESPOLU.md](./CACHE-DLA-ZESPOLU.md)
-
 Aplikacja: wiele podów Next.js, jeden build, load balancer, wspólny Redis.
 
 **Dwa handlery** (config stały na staging i prod):
