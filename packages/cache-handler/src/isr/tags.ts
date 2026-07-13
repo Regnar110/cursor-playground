@@ -1,9 +1,9 @@
-import type { SerializedValue, TagRecord } from './types.js';
+import type { CacheValue, TagRecord } from './types.js';
 
 const CACHE_TAGS_HEADER = 'x-next-cache-tags';
 
 /** Tags of a page/route entry live in the x-next-cache-tags response header. */
-export function tagsFromEntry(value: SerializedValue): string[] {
+export function tagsFromEntry(value: CacheValue): string[] {
   const headers = value.headers as Record<string, unknown> | undefined;
   const header = headers?.[CACHE_TAGS_HEADER];
   return typeof header === 'string' && header.length > 0 ? header.split(',') : [];

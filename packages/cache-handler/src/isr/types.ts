@@ -1,11 +1,8 @@
 export type TagRecord = { stale?: number; expired?: number };
 
-/** IncrementalCacheValue with Buffers/Maps replaced by base64/plain objects. */
-export type SerializedValue = Record<string, unknown> & { kind: string };
-
 export interface StoredEntry {
   lastModified: number;
-  value: SerializedValue;
+  value: CacheValue;
 }
 
 export interface HandlerContext {

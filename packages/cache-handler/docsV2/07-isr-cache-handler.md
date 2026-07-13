@@ -43,11 +43,15 @@ flowchart TB
 ## What gets stored
 
 The handler implements the Next.js `cacheHandler` API (`get`, `set`,
-`revalidateTag`, `resetRequestCache`). Each entry is a JSON document in Redis:
+`revalidateTag`, `resetRequestCache`). Each entry is a **binary blob** in Redis
+(`v8.serialize`, same encoding as the remote handler — not JSON):
 
 ```
 { lastModified: <timestamp>, value: <IncrementalCacheValue> }
 ```
+
+`getBuffer` / binary `SET` avoid UTF-8 corruption and base64 inflation on
+large RSC payloads.
 
 Supported entry kinds:
 
@@ -59,8 +63,9 @@ Supported entry kinds:
 | `FETCH` | Cached `fetch()` results |
 | `IMAGE` | Optimized image buffers |
 
-Binary data (RSC payloads, image buffers, route bodies) is stored as base64 inside
-the JSON document. Redis keys use the prefix `isr:entry:`.
+Binary data (RSC payloads, image buffers, route bodies) is stored inside the
+`v8` payload as native `Buffer` / `Map` instances. Redis keys use the prefix
+`isr:entry:`. Legacy JSON entries (pre-v8) are still readable on `get`.
 
 ## The `get` flow
 
@@ -92,9 +97,8 @@ deleted — it becomes invisible until it naturally expires from Redis TTL.
 
 On a cache miss, Next.js renders the page and calls `set` with the result:
 
-1. The handler serializes buffers to base64.
-2. It wraps the value in `{ lastModified: Date.now(), value }`.
-3. It writes to Redis with TTL = `cacheControl.expire` from the route (or
+1. The handler serializes `{ lastModified, value }` with `v8.serialize`.
+2. It writes the binary blob to Redis with TTL = `cacheControl.expire` from the route (or
    `ISR_ENTRY_TTL_SECONDS`, default 24 h).
 
 Fetch entries also store their `tags` array inside the serialized value so
@@ -208,3 +212,26 @@ When Redis is unavailable:
 
 This matches the remote handler's L1-only degradation pattern, but the ISR
 handler has no local fallback store — miss means render.
+
+## Performance vs default handler
+
+Before `cacheHandler` is wired, Next.js serves ISR hits from **local disk and/or
+an in-process memory cache** (default `cacheMaxMemorySize` is 50 MB). That is
+microseconds on the same machine.
+
+With this Redis handler and `cacheMaxMemorySize: 0` (required for cross-instance
+consistency without a local L1):
+
+1. **Every page view** calls `get()` → Redis `GET` on `isr:entry:*`.
+2. **Tag validation** adds a second round-trip (`MGET` on `isr:tag:*`).
+3. **Deserialization** — JSON parse plus base64 decode of RSC/segment buffers on
+   every hit.
+4. Next.js still constructs a **new handler instance per request** (see links in
+   `src/isr/handler.ts`); that cost is small compared to Redis I/O.
+
+So a cache **hit** can feel slower than before even when nothing changed — you
+traded single-instance latency for shared, consistent cache across pods.
+
+Mitigations (not implemented yet): a short-TTL per-process L1 in front of Redis,
+pipelining `GET`+`MGET`, co-locating Redis with app nodes, or keeping hot keys in
+memory with explicit invalidation via Pub/Sub.

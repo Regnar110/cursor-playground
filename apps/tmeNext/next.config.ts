@@ -11,7 +11,8 @@ const nextConfig: NextConfig = {
   // Handler dla full route cache / ISR / fetch cache - wspoldzielony przez Redis,
   // zeby wszystkie instancje serwowaly ten sam snapshot HTML
   cacheHandler: require.resolve("@tme/cache-handler/isr"),
-  // Bez lokalnego cache w pamieci - jedynym zrodlem prawdy dla ISR jest Redis
+  // 0 = brak lokalnego ISR w pamieci procesu; kazdy hit idzie do Redis (wolniej niz
+  // domyslny disk/memory cache, ale spójnie miedzy instancjami). Zob. docsV2/07.
   cacheMaxMemorySize: 0,
   images: {
     remotePatterns: [

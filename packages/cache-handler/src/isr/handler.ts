@@ -1,8 +1,8 @@
 import { envInt, TAG_META_TTL_SECONDS, ISR_MAX_ENTRY_BYTES } from '../lib/config.js';
 import { cacheLog } from '../lib/log.js';
 import { getRedis } from '../lib/redisClient.js';
+import { deserializeStoredEntry, serializeStoredEntry } from './entry.js';
 import { isrEntryKey, isrTagKey } from './keys.js';
-import { deserializeValue, serializeValue } from './serialize.js';
 import { areTagsExpired, tagsFromEntry } from './tags.js';
 import type {
   CacheValue,
@@ -17,6 +17,23 @@ import type {
 const ENTRY_TTL_SECONDS = envInt('ISR_ENTRY_TTL_SECONDS', 24 * 60 * 60);
 const LOG_PREFIX = 'isr-cache-handler';
 
+/**
+ * Custom `cacheHandler` for Next.js incremental / full route cache.
+ *
+ * Next.js creates a **new instance per request** when it constructs
+ * `IncrementalCache` (comment in upstream: "incremental-cache is request
+ * specific … per-cache handler"). The framework passes `revalidatedTags` from
+ * the current request headers so on-demand revalidation in the same request is
+ * visible to `get()`.
+ *
+ * Do not open Redis or other heavy resources here — use module-scope singletons
+ * (`getRedis`). `resetRequestCache()` is called between phases of the same
+ * request; this implementation is a no-op because we have no per-request memory
+ * cache.
+ *
+ * @see https://github.com/vercel/next.js/blob/v16.2.0/packages/next/src/server/lib/incremental-cache/index.ts
+ * @see https://github.com/vercel/next.js/blob/v16.2.0/packages/next/src/server/next-server.ts
+ */
 export default class RedisIsrCacheHandler {
   /** Tags already revalidated within the current request (on-demand revalidation). */
   private revalidatedTags: string[];
@@ -25,6 +42,12 @@ export default class RedisIsrCacheHandler {
     this.revalidatedTags = ctx?.revalidatedTags ?? [];
   }
 
+  /**
+   * Every cache lookup goes to Redis (GET entry + MGET tag records). With
+   * `cacheMaxMemorySize: 0` there is no in-process ISR layer, so even a "hot"
+   * page pays a network round-trip on each refresh — unlike the default disk /
+   * memory handler where hits are effectively instant on the same instance.
+   */
   async get(cacheKey: string, ctx: GetContext): Promise<StoredEntry | null> {
     try {
       const redis = await getRedis();
@@ -32,12 +55,12 @@ export default class RedisIsrCacheHandler {
         return null;
       }
 
-      const raw = await redis.get(isrEntryKey(cacheKey));
+      const raw = await redis.getBuffer(isrEntryKey(cacheKey));
       if (!raw) {
         return null;
       }
 
-      const entry = JSON.parse(raw) as StoredEntry;
+      const entry = deserializeStoredEntry(raw);
 
       const tags =
         ctx.kind === 'FETCH'
@@ -56,7 +79,7 @@ export default class RedisIsrCacheHandler {
         }
       }
 
-      return { lastModified: entry.lastModified, value: deserializeValue(entry.value) as never };
+      return { lastModified: entry.lastModified, value: entry.value as never };
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       cacheLog(LOG_PREFIX, 'warn', `get failed, treating as miss: ${message}`);
@@ -76,15 +99,15 @@ export default class RedisIsrCacheHandler {
         return;
       }
 
-      const value = serializeValue(data);
+      const value = { ...data } as CacheValue;
       if (ctx.fetchCache) {
         value.tags = ctx.tags ?? [];
       }
 
-      const entry: StoredEntry = { lastModified: Date.now(), value };
+      const lastModified = Date.now();
       const ttl = ctx.cacheControl?.expire ?? ENTRY_TTL_SECONDS;
-      const payload = JSON.stringify(entry);
-      if (Buffer.byteLength(payload, 'utf8') > ISR_MAX_ENTRY_BYTES) {
+      const payload = serializeStoredEntry(lastModified, value);
+      if (payload.byteLength > ISR_MAX_ENTRY_BYTES) {
         cacheLog(
           LOG_PREFIX,
           'warn',
