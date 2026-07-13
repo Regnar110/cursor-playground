@@ -7,7 +7,7 @@ import styles from "./revalidate-button.module.css";
 
 type Props = {
   label: string;
-  resource: Exclude<CacheResource, "cache-lab">;
+  resource: Exclude<CacheResource, "cache-lab" | "news">;
   country: string;
   lang: string;
 };

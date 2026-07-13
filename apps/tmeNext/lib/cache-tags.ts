@@ -14,7 +14,7 @@
  *   data:posts:pl:pl           → scope = locale
  *   ui:product:42              → scope = id encji
  */
-export type CacheResource = "posts" | "users" | "products" | "cache-lab";
+export type CacheResource = "posts" | "users" | "products" | "cache-lab" | "news";
 
 export function dataTag(resource: CacheResource, ...scope: Array<string | number>): string {
   return ["data", resource, ...scope.map(String)].join(":");

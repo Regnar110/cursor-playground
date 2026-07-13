@@ -16,6 +16,8 @@ ENV NX_DAEMON=false \
 COPY --from=deps /repo/node_modules ./node_modules
 COPY package.json package-lock.json nx.json ./
 COPY packages/cache-handler ./packages/cache-handler
+# npm instaluje czesc dev-zaleznosci (m.in. tsup) w zagniezdzonym node_modules workspace'u
+COPY --from=deps /repo/packages/cache-handler/node_modules ./packages/cache-handler/node_modules
 COPY apps/tmeNext ./apps/tmeNext
 RUN npm run build -w @tme/cache-handler && npx nx build tmeNext
 
