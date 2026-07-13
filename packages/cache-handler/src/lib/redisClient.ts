@@ -13,24 +13,29 @@ import {
 } from "./state.js";
 
 function redisOptions(): RedisOptions | null {
-  if (
-    !process.env.REDIS_HOST ||
-    !process.env.REDIS_PORT ||
-    !process.env.REDIS_PASSWORD
-  ) {
+  if (!process.env.REDIS_HOST || !process.env.REDIS_PORT) {
     return null;
   }
 
-  return {
+  const options: RedisOptions = {
     host: process.env.REDIS_HOST,
     port: envInt("REDIS_PORT", 6379),
-    password: process.env.REDIS_PASSWORD,
     db: envInt("REDIS_DB", 0),
     lazyConnect: true,
     enableOfflineQueue: false,
     maxRetriesPerRequest: 2,
     retryStrategy: (times: number) => (times > 5 ? null : Math.min(times * 200, 2000)),
   };
+
+  if (process.env.REDIS_PASSWORD) {
+    options.password = process.env.REDIS_PASSWORD;
+  }
+
+  if (process.env.REDIS_TLS === "true") {
+    options.tls = {};
+  }
+
+  return options;
 }
 
 export function createRedis(): Redis {

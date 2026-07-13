@@ -1,4 +1,5 @@
-import { envInt, TAG_META_TTL_SECONDS } from '../lib/config.js';
+import { envInt, TAG_META_TTL_SECONDS, ISR_MAX_ENTRY_BYTES } from '../lib/config.js';
+import { cacheLog } from '../lib/log.js';
 import { getRedis } from '../lib/redisClient.js';
 import { isrEntryKey, isrTagKey } from './keys.js';
 import { deserializeValue, serializeValue } from './serialize.js';
@@ -14,6 +15,7 @@ import type {
 
 /** Default entry lifetime when the route provides no explicit `expire`. */
 const ENTRY_TTL_SECONDS = envInt('ISR_ENTRY_TTL_SECONDS', 24 * 60 * 60);
+const LOG_PREFIX = 'isr-cache-handler';
 
 export default class RedisIsrCacheHandler {
   /** Tags already revalidated within the current request (on-demand revalidation). */
@@ -57,7 +59,7 @@ export default class RedisIsrCacheHandler {
       return { lastModified: entry.lastModified, value: deserializeValue(entry.value) as never };
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
-      console.warn('[isr-cache-handler] get failed, treating as miss:', message);
+      cacheLog(LOG_PREFIX, 'warn', `get failed, treating as miss: ${message}`);
       return null;
     }
   }
@@ -81,10 +83,19 @@ export default class RedisIsrCacheHandler {
 
       const entry: StoredEntry = { lastModified: Date.now(), value };
       const ttl = ctx.cacheControl?.expire ?? ENTRY_TTL_SECONDS;
-      await redis.set(isrEntryKey(cacheKey), JSON.stringify(entry), 'EX', ttl);
+      const payload = JSON.stringify(entry);
+      if (Buffer.byteLength(payload, 'utf8') > ISR_MAX_ENTRY_BYTES) {
+        cacheLog(
+          LOG_PREFIX,
+          'warn',
+          `set skipped for ${cacheKey}: entry exceeds ISR_MAX_ENTRY_BYTES (${ISR_MAX_ENTRY_BYTES})`,
+        );
+        return;
+      }
+      await redis.set(isrEntryKey(cacheKey), payload, 'EX', ttl);
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
-      console.warn('[isr-cache-handler] set failed, entry not shared:', message);
+      cacheLog(LOG_PREFIX, 'warn', `set failed, entry not shared: ${message}`);
     }
   }
 
@@ -116,7 +127,7 @@ export default class RedisIsrCacheHandler {
       await pipeline.exec();
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
-      console.error('[isr-cache-handler] revalidateTag failed:', message);
+      cacheLog(LOG_PREFIX, 'error', `revalidateTag failed: ${message}`);
     }
   }
 

@@ -75,4 +75,18 @@ describe('ISR handler — get / set', () => {
 
     expect(await handler.get(PAGE_KEY, { kind: 'APP_PAGE' })).toBeNull();
   });
+
+  test('skips set when serialized entry exceeds ISR_MAX_ENTRY_BYTES', async () => {
+    process.env.ISR_MAX_ENTRY_BYTES = '100';
+    handler = loadIsrHandler();
+
+    await handler.set(
+      PAGE_KEY,
+      makeAppPageValue({ html: '<html>' + 'x'.repeat(500) + '</html>' }),
+      { cacheControl: { expire: 3600 } },
+    );
+
+    expect(FakeRedis.state.store.has(isrEntryKey(PAGE_KEY))).toBe(false);
+    delete process.env.ISR_MAX_ENTRY_BYTES;
+  });
 });

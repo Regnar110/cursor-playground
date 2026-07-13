@@ -2,6 +2,7 @@
 # .next) + kontener k6 (tmeNext-K6Test) w tej samej sieci.
 #
 #   docker compose up -d --build          # redis + 8x tmeNext
+#   docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build
 #   nx run tmeNext-K6Test:load            # testy k6 (kontener, profil "k6")
 
 x-tme-next: &tme-next

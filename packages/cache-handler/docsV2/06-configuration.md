@@ -5,15 +5,17 @@ to their defaults when unset or non-numeric.
 
 ## Redis connection
 
-Required for L2 and Pub/Sub. When `REDIS_HOST`, `REDIS_PORT` or `REDIS_PASSWORD`
-is missing, the handler operates in **L1-only** mode.
+Required for L2 and Pub/Sub. When `REDIS_HOST` or `REDIS_PORT` is missing, the
+handler operates in **L1-only** mode (remote) or returns cache misses (ISR).
 
 | Variable | Required | Default | Description |
 |----------|----------|---------|-------------|
 | `REDIS_HOST` | Yes (for Redis) | — | Redis hostname |
 | `REDIS_PORT` | Yes (for Redis) | `6379` | Redis port |
-| `REDIS_PASSWORD` | Yes (for Redis) | — | Redis password |
+| `REDIS_PASSWORD` | No | — | Redis password (omit for local/dev without auth) |
 | `REDIS_DB` | No | `0` | Redis database number |
+| `REDIS_TLS` | No | — | Set to `true` for TLS connections (managed Redis) |
+| `REDIS_CACHE_PREFIX` | No | — | Prefix for all Redis keys (multi-tenant / shared Redis) |
 
 Connection behavior:
 
@@ -63,13 +65,16 @@ Used by `@tme/cache-handler/isr` (`cacheHandler` in Next.js config). See
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `ISR_ENTRY_TTL_SECONDS` | `86400` (24 h) | Redis TTL for ISR entries when the route provides no explicit `expire` |
+| `ISR_MAX_ENTRY_BYTES` | `4194304` (4 MB) | Max serialized entry size; larger entries are not stored (warn logged) |
 
-Register alongside the remote handler:
+## Handler logging
 
-```ts
-cacheHandler: require.resolve("@tme/cache-handler/isr"),
-cacheMaxMemorySize: 0,
-```
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `CACHE_HANDLER_LOG_LEVEL` | `warn` in production, `info` otherwise | `error`, `warn`, `info`, or `silent` |
+
+Errors are always logged unless the level is `silent`. Warnings include Redis
+degradation and ISR oversize skips.
 
 ## Debug telemetry
 

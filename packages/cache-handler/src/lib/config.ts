@@ -22,3 +22,6 @@ return 0
 `;
 
 export const REDIS_COOLDOWN_MS = 30_000;
+
+/** Max serialized ISR entry size in Redis (bytes). Oversized entries are not stored. */
+export const ISR_MAX_ENTRY_BYTES = envInt('ISR_MAX_ENTRY_BYTES', 4 * 1024 * 1024);

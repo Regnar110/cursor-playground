@@ -184,9 +184,18 @@ local memory copy that can diverge.
 |----------|---------|-------------|
 | `ISR_ENTRY_TTL_SECONDS` | `86400` (24 h) | Redis TTL for ISR entries when the route provides no `expire` |
 | `TAG_META_TTL_SECONDS` | `604800` (7 days) | TTL of ISR tag invalidation records (shared with remote handler) |
+| `ISR_MAX_ENTRY_BYTES` | `4194304` (4 MB) | Oversized route payloads are not written to Redis |
 
 Redis connection variables are the same as for the remote handler — see
 [06 — Configuration](06-configuration.md).
+
+### Production checklist
+
+- Set `cacheMaxMemorySize: 0` so Redis is the single ISR source of truth.
+- Use `REDIS_TLS=true` and a strong password on managed Redis.
+- Set `REMOTE_CACHE_DEBUG_ENABLED=false` and `CACHE_HANDLER_LOG_LEVEL=warn`.
+- Optionally set `REDIS_CACHE_PREFIX` when sharing Redis with other apps.
+- For Docker: `docker compose -f docker-compose.yml -f docker-compose.prod.yml up`.
 
 ## Degraded operation
 

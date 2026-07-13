@@ -1,0 +1,28 @@
+# Production overrides for docker-compose.yml
+#
+#   docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build
+#
+# Disables debug telemetry and keeps handler logs at warn+.
+
+x-tme-next-prod: &tme-next-prod
+  environment:
+    REMOTE_CACHE_DEBUG_ENABLED: "false"
+    CACHE_HANDLER_LOG_LEVEL: warn
+
+services:
+  tme-next-1:
+    <<: *tme-next-prod
+  tme-next-2:
+    <<: *tme-next-prod
+  tme-next-3:
+    <<: *tme-next-prod
+  tme-next-4:
+    <<: *tme-next-prod
+  tme-next-5:
+    <<: *tme-next-prod
+  tme-next-6:
+    <<: *tme-next-prod
+  tme-next-7:
+    <<: *tme-next-prod
+  tme-next-8:
+    <<: *tme-next-prod
