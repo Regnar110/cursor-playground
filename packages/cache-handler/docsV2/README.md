@@ -1,50 +1,46 @@
-# @tme/cache-handler — dokumentacja v2
+# @tme/cache-handler — documentation v2
 
-Ta dokumentacja tłumaczy **jak działa** paczka i **co daje aplikacji** — bez wchodzenia
-w szczegóły implementacji. Jeśli szukasz opisu konkretnych funkcji i plików, zajrzyj do
-kodu w `src/lib/` — jest krótki i dobrze podzielony.
+`@tme/cache-handler` is a **remote cache handler** for Next.js 16 (Cache Components).
+It plugs into the `use cache: remote` directive and replaces the built-in Next.js
+cache with a two-level store:
 
-## Czym jest ta paczka
+- **L1** — a small, fast in-process cache (LRU) inside each Node process,
+- **L2** — Redis, shared by all instances of the application.
 
-`@tme/cache-handler` to **zdalny cache handler** dla Next.js 16 (Cache Components).
-Podpina się pod dyrektywę `use cache: remote` i zastępuje wbudowany cache Next.js
-własnym, dwupoziomowym magazynem:
+A render result computed by one instance becomes immediately available to all
+others, and invalidation (e.g. after a CMS edit) is consistent across the whole
+cluster.
 
-- **L1** — mały, szybki cache w pamięci procesu Node (LRU),
-- **L2** — Redis, współdzielony przez wszystkie instancje aplikacji.
+## The mental model in 30 seconds
 
-Dzięki temu wynik renderowania policzony przez jedną instancję jest natychmiast
-dostępny dla wszystkich pozostałych, a unieważnienie (np. po edycji treści w CMS)
-działa spójnie w całym klastrze.
+1. Next.js asks the handler: "do you have a result for this key?" (`get`).
+2. The handler checks L1 first, then Redis. A fresh entry is returned right away.
+3. On a miss, Next.js renders and hands the result back to the handler (`set`),
+   which stores it in both L1 and Redis.
+4. When a tag is invalidated (`revalidateTag` → `updateTags`), the handler deletes
+   matching entries from Redis and broadcasts a Pub/Sub message telling every
+   instance to clear its L1.
 
-## Mentalny model w 30 sekund
+## Table of contents
 
-1. Next.js pyta handler: „masz wynik dla tego klucza?" (`get`).
-2. Handler patrzy najpierw do L1, potem do Redis. Jak znajdzie świeży wpis — zwraca go.
-3. Jak nie znajdzie — mówi „nie mam", Next.js renderuje, a wynik trafia z powrotem
-   do handlera (`set`), który zapisuje go w L1 i Redis.
-4. Gdy ktoś unieważni tag (`revalidateTag` → `updateTags`), handler kasuje wpisy
-   z Redis i rozgłasza przez Pub/Sub „wyczyśćcie swoje L1" do wszystkich instancji.
+| Chapter | What it covers |
+|---------|----------------|
+| [01 — Mechanisms](01-mechanisms.md) | L1/L2, the `get` and `set` flows, single-flight, entry freshness, behavior during a Redis outage |
+| [02 — Next.js integration](02-nextjs-integration.md) | `use cache: remote`, `cacheTag`, `cacheLife`, stale-while-revalidate in Next.js 16 |
+| [03 — Invalidation](03-invalidation.md) | How tag invalidation works: Pub/Sub, tag timestamps, cross-instance synchronization |
+| [04 — Application benefits](04-application-benefits.md) | What to expect after adoption: fewer renders, cross-instance consistency, outage resilience |
+| [05 — Glossary](05-glossary.md) | Definitions of the terms used throughout this documentation |
 
-## Spis treści
+## Key defaults
 
-| Rozdział | Co wyjaśnia |
-|----------|-------------|
-| [01 — Mechanizmy](01-mechanizmy.md) | L1/L2, przepływ `get` i `set`, single-flight, świeżość wpisów, zachowanie przy awarii Redis |
-| [02 — Integracja z Next.js](02-integracja-z-nextjs.md) | `use cache: remote`, `cacheTag`, `cacheLife`, stale-while-revalidate w Next.js 16 |
-| [03 — Inwalidacja](03-inwalidacja.md) | Jak działa unieważnianie tagów: Pub/Sub, znaczniki czasu, synchronizacja między instancjami |
-| [04 — Korzyści dla aplikacji](04-korzysci-dla-aplikacji.md) | Czego się spodziewać po wdrożeniu: mniej renderów, spójność między instancjami, odporność na awarie |
+| Parameter | Default | Purpose |
+|-----------|---------|---------|
+| L1 capacity | 500 entries / 50 MB | Hot keys don't hit Redis on every request |
+| L1 entry lifetime | 15 seconds | L1 is only a buffer — Redis is the source of truth |
+| Render lock (single-flight) | 30 seconds | Only one instance renders on a cache miss |
+| Wait for a peer render | up to ~5 seconds (50 polls every 100 ms) | Other instances wait for the result instead of rendering |
+| Tag invalidation metadata | 7 days | Safety net in case a Pub/Sub message is lost |
+| Cooldown after a Redis outage | 30 seconds | The handler doesn't flood a recovering Redis with connection attempts |
 
-## Najważniejsze wartości domyślne
-
-| Parametr | Domyślnie | Po co |
-|----------|-----------|-------|
-| Pojemność L1 | 500 wpisów / 50 MB | Gorące klucze nie chodzą do Redis przy każdym żądaniu |
-| Życie wpisu w L1 | 15 sekund | L1 jest tylko buforem — źródłem prawdy jest Redis |
-| Blokada renderowania (single-flight) | 30 sekund | Przy cache miss renderuje tylko jedna instancja |
-| Oczekiwanie na cudzy render | do ~5 sekund (50 prób co 100 ms) | Pozostałe instancje czekają na wynik zamiast renderować |
-| Metadane inwalidacji tagów | 7 dni | Zabezpieczenie na wypadek zgubionego komunikatu Pub/Sub |
-| Przerwa po awarii Redis | 30 sekund | Handler nie zasypuje padniętego Redisa próbami połączenia |
-
-Wszystkie wartości można zmienić zmiennymi środowiskowymi — pełna lista w
-[docs/CONFIGURATION.md](../docs/CONFIGURATION.md).
+All values are configurable via environment variables — see
+[docs/CONFIGURATION.md](../docs/CONFIGURATION.md) for the full list.
