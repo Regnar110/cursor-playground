@@ -32,6 +32,7 @@ cluster.
 | [05 — Glossary](05-glossary.md) | Definitions of the terms used throughout this documentation |
 | [06 — Configuration](06-configuration.md) | Environment variables, defaults, and an example setup |
 | [07 — ISR cache handler](07-isr-cache-handler.md) | Shared full route cache (`cacheHandler`) for multi-instance deployments |
+| [08 — Użycie bez ISR](08-uzycie-bez-isr.md) | Praktyczny przewodnik: `cacheLife` (wygaśnięcie wpisów) i `connection()` + `updateTag` (read-your-own-writes) — tylko `cacheHandlers.remote` |
 
 ## Key defaults
 
