@@ -1,135 +1,115 @@
-# Strategia cache — remote + ISR
+# Strategia cache — fazy wdrożenia (remote → remote + ISR)
 
-Produkcyjny przewodnik po cache w aplikacji wieloinstancyjnej (wiele podów, jeden `.next`, load balancer, Redis).
+Produkcyjny przewodnik wdrożenia cache w aplikacji wieloinstancyjnej (wiele podów, jeden `.next`, load balancer, Redis).
 
-Opisuje **konkretne podejścia** do cache’owania **danych** i **stron** — bez schematu kluczy Redis (szczegóły: [CACHING.md](./CACHING.md), `lib/cache-tags.ts`).
+Dokument opisuje **dwie fazy wdrożenia** — w każdej: podejście do cache’owania **danych** i **stron**, oraz **kryteria akceptacji** wymagane do przejścia dalej.
+
+Bez schematu kluczy Redis — szczegóły w [CACHING.md](./CACHING.md) i `lib/cache-tags.ts`.
 
 ---
 
-## 1. Kontekst
+## Przegląd faz
+
+```mermaid
+flowchart LR
+    F1["Faza 1\nTylko remote"] -->|kryteria akceptacji| F2["Faza 2\nRemote + ISR\nprodukcja docelowa"]
+```
+
+| Faza | Handlery | Środowisko | Cel |
+|------|----------|------------|-----|
+| **1** | `cacheHandlers.remote` | Staging, dev, wczesna produkcja | Udowodnić model danych + read-your-own-writes |
+| **2** | remote + `cacheHandler` (ISR) | Produkcja wieloinstancyjna | Spójny snapshot stron odczytu między podami |
+
+---
+
+## Wspólne założenia (obie fazy)
 
 ### Środowisko
 
-- Wiele instancji Next.js za load balancerem, bez sticky sessions.
-- Jeden build / jeden obraz Docker, wspólny Redis.
+- Wiele instancji za load balancerem, bez sticky sessions.
+- Jeden build / obraz Docker, wspólny Redis.
 - `cacheComponents: true`.
-- Locale (`country`, `lang`) przekazywane jako **argumenty** do funkcji i komponentów — nie przez `cookies()` / `headers()` w `use cache`.
-- Mutacje wyłącznie przez Server Actions (użytkownik w aplikacji).
+- Locale jako argumenty funkcji i komponentów — nie `cookies()` / `headers()` w `use cache`.
+- Mutacje wyłącznie przez Server Actions.
 
-### Czego nie ma w aplikacji
+### Model świeżości
 
-Brak invalidacji z zewnątrz: CMS, webhooki, crony, `revalidateTag`, `revalidatePath`.
-
-Świeżość opiera się tylko na:
+Brak invalidacji z zewnątrz (CMS, webhooki, `revalidateTag`, `revalidatePath`).
 
 | Mechanizm | Warstwa | Kiedy |
 |-----------|---------|-------|
-| `cacheLife` | Dane (remote) | Domyślnie — wpis wygasa według profilu |
-| `updateTag` | Dane (remote) | Użytkownik zapisał — read-your-own-writes |
-| `router.refresh()` | Widok klienta | Po Server Action zmieniającej ekran |
+| `cacheLife` | Dane (remote) | Domyślnie |
+| `updateTag` | Dane (remote) | Po zapisie użytkownika — read-your-own-writes |
+| `router.refresh()` | Widok klienta | Po Server Action |
+
+### Dwie warstwy cache
+
+| Warstwa | Handler | Co cache’uje | Gdzie w kodzie |
+|---------|---------|--------------|----------------|
+| **Dane — DATA** | remote | Wynik fetcha | `lib/data/*.ts` |
+| **Dane — UI** | remote | Fragment JSX + zamrożone DATA | `components/cached-*.tsx` |
+| **Strona** | ISR (faza 2) | Snapshot route’a (HTML + RSC) | `page.tsx` — domyślnie Next.js |
+
+Dane cache’ujesz jawnie (`"use cache: remote"`). Stronę w fazie 2 cache’uje ISR — chyba że wyłączysz przez `connection()`.
 
 ---
 
-## 2. Dwie warstwy cache
+## Faza 1 — tylko remote handler
 
-```mermaid
-flowchart TB
-    subgraph strona ["Cache strony — ISR handler"]
-        ISR["Snapshot HTML + RSC\ncała route"]
-    end
-    subgraph dane ["Cache danych — remote handler"]
-        UI["Komponent UI\nuse cache: remote"]
-        DATA["Funkcja DATA\nuse cache: remote"]
-    end
-  REQ["Żądanie HTTP"] --> ISR
-  ISR -- miss --> UI
-  UI --> DATA
-  DATA --> API["API / baza"]
+### Cel fazy
+
+Wdrożyć i ustabilizować **cache danych** w Redis (cluster-wide) oraz **read-your-own-writes** na stronach z mutacją — zanim dołożysz warstwę ISR.
+
+### Konfiguracja
+
+```ts
+// next.config.ts
+cacheComponents: true,
+cacheHandlers: {
+  remote: require.resolve("@tme/cache-handler"),
+},
+// brak cacheHandler (ISR)
 ```
 
-| Warstwa | Handler | Co trzymasz | Gdzie w kodzie |
-|---------|---------|-------------|----------------|
-| **Dane — DATA** | `cacheHandlers.remote` | Wynik fetcha (JSON, rekordy) | `lib/data/*.ts` |
-| **Dane — UI** | `cacheHandlers.remote` | Wyrenderowany fragment + zamrożone DATA | `components/cached-*.tsx` |
-| **Strona** | `cacheHandler` (ISR) | Cały snapshot route’a (powłoka RSC) | `page.tsx` — domyślne zachowanie Next.js |
+### Podejście — dane (remote)
 
-**Zasada:** dane cache’ujesz jawnie (`"use cache: remote"`). Stronę cache’uje Next.js przez ISR, chyba że jawnie ją wyłączysz (`connection()`).
+Obowiązuje także w fazie 2 — tu budujesz fundament.
 
----
+| Element | Gdzie | Zasady |
+|---------|-------|--------|
+| **DATA** | `lib/data/*.ts` | `"use cache: remote"` + `cacheLife` + tag |
+| **UI** | `components/cached-*.tsx` | `"use cache: remote"` + `cacheLife` + tag, woła DATA |
 
-## 3. Podejście do cache’owania danych (remote)
+**Świeżość:**
 
-Dotyczy funkcji DATA i komponentów UI. Niezależne od tego, czy strona ma włączony ISR.
+| Sytuacja | Mechanizm |
+|----------|-----------|
+| Odczyt, brak zapisu | `cacheLife` na DATA i UI |
+| Użytkownik zapisał | `updateTag` (DATA **i** UI, ten sam scope) → `router.refresh()` |
 
-### 3.1 Podział DATA / UI
-
-| Element | Rola | `"use cache: remote"` |
-|---------|------|------------------------|
-| **DATA** | Fetch, mapowanie, logika pobierania | Tak — w `lib/data/` |
-| **UI** | JSX, layout fragmentu; woła DATA wewnątrz | Tak — w `components/cached-*.tsx` |
-
-Przy hit na UI funkcja DATA **nie wykonuje się** — dane są zamrożone w wpisie UI. Stąd przy `updateTag` invalidujesz **zawsze oba** (DATA + UI), ten sam scope (zasób + locale).
-
-### 3.2 Świeżość danych — `cacheLife`
-
-| Profil | Zastosowanie |
-|--------|--------------|
-| `hours` / `days` | Katalogi, listy, dane rzadko zmieniane |
-| `minutes` | Demo, dane szybciej „starejące” |
-| Unikaj `max` | Wpis praktycznie nie wygasa — bez zewnętrznej invalidacji to ryzyko |
-
-`cacheLife` to **jedyny** mechanizm świeżości na stronach bez mutacji użytkownika.
-
-### 3.3 Świeżość po zapisie — `updateTag`
-
-Tylko w Server Action, po udanym zapisie:
+**Profile `cacheLife`:** `hours` / `days` dla katalogów; `minutes` dla demo; unikaj `max`.
 
 ```ts
 "use server";
 import { updateTag } from "next/cache";
 
-export async function saveResource(country: string, lang: string, formData: FormData) {
-  await persist(formData);
-
-  updateTag(/* tag DATA */);
-  updateTag(/* tag UI */);
+export async function saveResource(country: string, lang: string, data: FormData) {
+  await persist(data);
+  updateTag(/* DATA */);
+  updateTag(/* UI */);
 }
 ```
 
-```ts
-// Klient
-router.refresh();
-```
+### Podejście — strony (bez współdzielonego ISR)
 
-Opcjonalnie w tej samej akcji ponów odczyt cached funkcji DATA — read-your-own-writes w jednym żądaniu.
+W fazie 1 Next trzyma route cache **lokalnie per pod** — nie ma współdzielonego snapshotu strony w Redis.
 
-### 3.4 Podsumowanie — dane
+| Typ strony | Przykład | `connection()` | Cache danych | Cache strony |
+|------------|----------|----------------|--------------|--------------|
+| **Odczyt** | `/posts`, `/products` | Nie | `cacheLife` | Lokalny per pod — rozjazd między instancjami możliwy |
+| **Mutacja** | `/account`, formularze | **Tak** | `cacheLife` + `updateTag` | Render per-request — spójność przez remote |
 
-| Sytuacja | Co robisz |
-|----------|-----------|
-| Strona tylko do odczytu | `cacheLife` na DATA i UI |
-| Użytkownik zapisał | `updateTag` (DATA + UI) → `router.refresh()` |
-| Zewnętrzna invalidacja | **Nie stosujemy** |
-
----
-
-## 4. Podejście do cache’owania stron (ISR)
-
-Dotyczy powłoki route’a (HTML + RSC). Włączone dopiero w fazie 2 (patrz §6).
-
-### 4.1 Kiedy strona **jest** w ISR
-
-- Route **tylko do odczytu** — użytkownik nie zapisuje na tej stronie.
-- Brak `connection()` w treści strony.
-- Next zapisuje snapshot do Redis (`cacheHandler` + `cacheMaxMemorySize: 0`).
-- Wszystkie instancje serwują **ten sam** snapshot — spójność za load balancerem.
-
-Świeżość powłoki: **wyłącznie czasowa** (domyślne `revalidate` route’a). Nie invalidujemy ISR ręcznie.
-
-### 4.2 Kiedy strona **omija** ISR
-
-- Route z **mutacją** — formularz, zapis konta, checkout.
-- `await connection()` w komponencie treści (w `Suspense`):
+**Strona mutacji** — wzorzec obowiązkowy:
 
 ```tsx
 async function AccountContent({ params }: { params: Promise<{ country: string; lang: string }> }) {
@@ -139,74 +119,68 @@ async function AccountContent({ params }: { params: Promise<{ country: string; l
 }
 ```
 
-- ISR handler **nie dostaje** `set` — każdy request renderuje powłokę na nowo.
-- Po zapisie wystarczy `updateTag` na danych + `router.refresh()` — nie ma warstwy ISR do zsynchronizowania.
+**Strona odczytu** — bez `connection()`, świeżość danych z `cacheLife`:
 
-### 4.3 Interakcja ISR ↔ remote na stronie odczytu
-
-Na stronie katalogowej (np. `/posts`) mogą być **trzy** niezależne „zegary”:
-
-| Warstwa | Co może być stare | Jak odświeżasz |
-|---------|-------------------|----------------|
-| ISR (powłoka) | Snapshot RSC do wygaśnięcia route’a | Czas — brak ręcznej invalidacji |
-| UI (remote) | Fragment do `cacheLife` UI | `cacheLife` |
-| DATA (remote) | Fetch do `cacheLife` DATA | `cacheLife` |
-
-To akceptowalne: użytkownik nie zapisuje na tej stronie, więc nie wołasz `updateTag`. Ewentualny rozjazd między powłoką a danymi znika po wygaśnięciu profili.
-
-### 4.4 Dlaczego strona z mutacją **musi** omijać ISR
-
-Bez `revalidatePath` nie invalidujesz powłoki ISR ręcznie. Gdyby strona z zapisem była w ISR:
-
-1. `updateTag` → remote świeży.
-2. Powłoka RSC z ISR → **stara** do wygaśnięcia czasowego.
-3. Użytkownik po F5 na innym podzie → stary snapshot mimo świeżych danych w Redis.
-
-`connection()` na stronach z mutacją to **wymóg** modelu, nie opcja.
-
-### 4.5 Podsumowanie — strony
-
-| Typ strony | ISR | `connection()` | Po zapisie użytkownika |
-|------------|-----|----------------|------------------------|
-| Odczyt (katalog, lista) | Włączony | Nie | — (brak zapisu) |
-| Mutacja (formularz) | Wyłączony | **Tak** | `updateTag` + `router.refresh()` |
-
----
-
-## 5. Macierz podejść (główna ściągawka)
-
-### Produkcja — remote + ISR (faza 2)
-
-| Typ strony | Przykład | ISR | DATA | UI | Świeżość danych | Świeżość strony |
-|------------|----------|-----|------|----|-----------------|-----------------|
-| **Odczyt** | `/posts`, `/products` | tak | `cacheLife` | `cacheLife` | `cacheLife` | wygaśnięcie route’a |
-| **Mutacja** | `/account`, formularze | nie | `cacheLife` + `updateTag` | `cacheLife` + `updateTag` | po zapisie | zawsze render |
-
-### Faza przejściowa — tylko remote (faza 1)
-
-| Typ strony | ISR | DATA / UI | Uwaga |
-|------------|-----|-----------|-------|
-| Odczyt | lokalny per pod | `cacheLife` | Możliwy rozjazd powłoki między instancjami |
-| Mutacja | — | `connection()` + `updateTag` | Spójność przez remote w Redis |
-
----
-
-## 6. Wdrożenie — dwie fazy
-
-### Faza 1 — tylko remote (staging / przejściowo)
-
-```ts
-cacheComponents: true,
-cacheHandlers: {
-  remote: require.resolve("@tme/cache-handler"),
-},
+```tsx
+async function PostsContent({ params }) {
+  const { country, lang } = await params;
+  return <CachedPostsList country={country} lang={lang} />;
+}
 ```
 
-Wieloinstancyjna produkcja **bez** ISR → faza przejściowa.
+### Ograniczenia fazy 1
 
-### Faza 2 — remote + ISR (produkcja docelowa)
+- Strony odczytu mogą **różnić się między podami** (lokalny route cache).
+- Faza 1 **nie jest** docelową produkcją wieloinstancyjną dla stron katalogowych.
+- Wzorzec danych i mutacji musi działać poprawnie — to warunek wejścia w fazę 2.
+
+### Kryteria akceptacji → przejście do fazy 2
+
+Wszystkie punkty **muszą** być spełnione:
+
+**Konfiguracja i infrastruktura**
+
+- [ ] `cacheHandlers.remote` działa na stagingu z Redis (L1 + L2).
+- [ ] ≥ 2 instancje za load balancerem na stagingu.
+- [ ] Redis dostępny i monitorowany (awaria → degradacja L1, bez padu aplikacji).
+
+**Dane (remote)**
+
+- [ ] Każdy zasób produkcyjny ma warstwę DATA i UI z `"use cache: remote"`.
+- [ ] Każdy wpis ma `cacheLife` i tag aplikacyjny (helper z `lib/cache-tags.ts`).
+- [ ] Brak `cacheLife("max")` na danych, które użytkownik może zmienić.
+- [ ] Po zapisie: `updateTag` na DATA **i** UI — we wszystkich Server Actions z mutacją.
+
+**Strony**
+
+- [ ] Każdy route z mutacją użytkownika ma `connection()` w treści strony.
+- [ ] Route’y odczytu zidentyfikowane i udokumentowane (lista podstron do ISR w fazie 2).
+- [ ] Po mutacji na stronie z `connection()`: `router.refresh()` na kliencie.
+
+**Weryfikacja funkcjonalna**
+
+- [ ] Read-your-own-writes: zapis → natychmiast świeże dane u tego samego użytkownika.
+- [ ] Read-your-own-writes przez LB: zapis na podzie A → F5 trafia na pod B → **świeże dane** (strona mutacji ma `connection()`).
+- [ ] Odczyt katalogu: cache hit w Redis (remote) potwierdzony na co najmniej jednej instancji.
+- [ ] Brak `revalidateTag` / `revalidatePath` w kodzie produkcyjnym aplikacji.
+
+**Gotowość zespołu**
+
+- [ ] Zespół rozumie podział DATA / UI i konieczność invalidacji obu warstw danych.
+- [ ] Checklist nowej funkcji (§ na końcu dokumentu) stosowany w code review.
+
+---
+
+## Faza 2 — remote + ISR (produkcja docelowa)
+
+### Cel fazy
+
+Dodać **współdzielony cache stron odczytu** w Redis — spójny snapshot RSC między wszystkimi podami. Strony mutacji bez zmian (nadal `connection()` + remote).
+
+### Konfiguracja
 
 ```ts
+// next.config.ts — rozszerzenie fazy 1
 cacheComponents: true,
 cacheHandlers: {
   remote: require.resolve("@tme/cache-handler"),
@@ -215,118 +189,144 @@ cacheHandler: require.resolve("@tme/cache-handler/isr"),
 cacheMaxMemorySize: 0, // wymagane — Redis jako jedyne źródło ISR
 ```
 
-### Migracja 1 → 2
+### Podejście — dane (remote)
+
+**Bez zmian względem fazy 1.** Remote handler, `cacheLife`, `updateTag` po zapisie — ten sam model.
+
+### Podejście — strony (ISR + remote)
+
+| Typ strony | ISR | `connection()` | Dane (remote) | Świeżość strony |
+|------------|-----|----------------|---------------|-----------------|
+| **Odczyt** | Włączony | Nie | `cacheLife` | Wygaśnięcie czasowe route’a |
+| **Mutacja** | Wyłączony | **Tak** | `cacheLife` + `updateTag` | Zawsze render per-request |
+
+#### Strona odczytu — ISR włączony
+
+- Usuń `connection()` (jeśli było dodane w fazie 1 „na wszelki wypadek”).
+- Next zapisuje snapshot do Redis — wszystkie instancje serwują ten sam wpis.
+- Nie wołasz `updateTag` na stronie bez mutacji — wystarczy `cacheLife` na danych.
+- Powłoka ISR może być krótko starsza niż remote — akceptowalne przy braku ręcznej invalidacji ISR.
+
+#### Strona mutacji — ISR wyłączony
+
+- `connection()` **zostaje** — bez zmian względem fazy 1.
+- Po zapisie: `updateTag` (DATA + UI) + `router.refresh()`.
+- **Nie dodawaj** `revalidatePath` — strona nie jest w ISR.
+
+#### Dlaczego mutacja wymaga `connection()` w fazie 2
+
+Bez ręcznej invalidacji ISR, gdyby strona z zapisem była w ISR:
+
+1. `updateTag` → remote świeży.
+2. Powłoka RSC z ISR → stara do wygaśnięcia czasowego.
+3. F5 na innym podzie → stary snapshot mimo świeżych danych.
+
+### Macierz fazy 2
+
+| Typ strony | Przykład | ISR | DATA | UI | Po zapisie |
+|------------|----------|-----|------|----|------------|
+| Odczyt | `/posts` | tak | `cacheLife` | `cacheLife` | — |
+| Mutacja | `/account` | nie | `cacheLife` + `updateTag` | `cacheLife` + `updateTag` | `router.refresh()` |
+
+### Kroki migracji z fazy 1
 
 1. Dodać `cacheHandler` + `cacheMaxMemorySize: 0`.
-2. Strony **odczytu**: usunąć `connection()` → włącz ISR.
-3. Strony **mutacji**: zostawić `connection()` → ISR nadal wyłączony.
-4. Test przez LB: odczyt na różnych podach (spójny ISR); zapis + F5 na innym podzie (świeże dane).
+2. Wdrożyć na staging z ≥ 2 instancjami.
+3. Route’y **odczytu** z listy z fazy 1: usunąć `connection()`.
+4. Route’y **mutacji**: bez zmian (`connection()` zostaje).
+5. Uruchomić weryfikację z kryteriów akceptacji poniżej.
+
+### Kryteria akceptacji → produkcja (faza 2 ukończona)
+
+**Konfiguracja**
+
+- [ ] `cacheHandler` (ISR) + `cacheMaxMemorySize: 0` na stagingu i produkcji.
+- [ ] Redis współdzielony między wszystkimi instancjami.
+
+**Klasyfikacja route’ów**
+
+- [ ] Wszystkie route’y odczytu **bez** `connection()`.
+- [ ] Wszystkie route’y mutacji **z** `connection()`.
+- [ ] Brak route’u mutacji bez `connection()` (audyt).
+
+**Weryfikacja — strony odczytu (ISR)**
+
+- [ ] Ten sam URL przez LB na różnych podach (`X-Upstream`) → **identyczny** snapshot strony (np. ten sam timestamp „page rendered at”).
+- [ ] Wpis `isr:entry:*` w Redis po pierwszym hitcie na route odczytu.
+- [ ] Po wygaśnięciu `cacheLife` danych — remote odświeża się; ISR odświeża się po swoim cyklu czasowym.
+
+**Weryfikacja — strony mutacji**
+
+- [ ] Zapis na podzie A → `router.refresh()` → świeże dane.
+- [ ] F5 przez LB na pod B → nadal świeże dane (brak ISR na tej stronie).
+- [ ] Brak wpisu ISR dla route’ów z `connection()`.
+
+**Weryfikacja — dane (regresja fazy 1)**
+
+- [ ] Wszystkie kryteria danych z fazy 1 nadal spełnione.
+- [ ] `updateTag` invaliduje wpisy remote na wszystkich instancjach (Pub/Sub + Redis).
+
+**Produkcja**
+
+- [ ] Obciążenie smoke / k6 na stagingu bez regresji błędów.
+- [ ] Runbook awarii Redis przetestowany (aplikacja działa, cache degraduje się gracefully).
 
 ---
 
-## 7. Wzorce implementacji
+## Antywzorce (obie fazy)
 
-### 7.1 Strona odczytu (katalog)
-
-```tsx
-// page.tsx — bez connection()
-export default function PostsPage({ params }) {
-  return (
-    <Suspense fallback={<Skeleton />}>
-      <PostsContent params={params} />
-    </Suspense>
-  );
-}
-
-async function PostsContent({ params }) {
-  const { country, lang } = await params;
-  return <CachedPostsList country={country} lang={lang} />;
-}
-```
-
-- ISR: włączony (faza 2).
-- DATA/UI: `cacheLife`, bez `updateTag`.
-
-### 7.2 Strona mutacji (formularz)
-
-```tsx
-// page.tsx
-export default function AccountPage({ params }) {
-  return (
-    <Suspense fallback={<Skeleton />}>
-      <AccountContent params={params} />
-    </Suspense>
-  );
-}
-
-async function AccountContent({ params }) {
-  await connection(); // wyłącza ISR
-  const { country, lang } = await params;
-  return <AccountForm country={country} lang={lang} />;
-}
-```
-
-- ISR: wyłączony.
-- Server Action: `updateTag` (DATA + UI) → klient: `router.refresh()`.
+| Antywzorzec | Faza | Skutek |
+|-------------|------|--------|
+| Produkcja multi-instance bez przejścia przez fazę 1 | 2 | ISR maskuje niedopracowany model danych |
+| `updateTag` bez mutacji | 1–2 | Zbędne |
+| Tylko `updateTag` na UI | 1–2 | Stary DATA wewnątrz UI |
+| Brak `connection()` na mutacji | 2 | Stara powłoka ISR po zapisie |
+| `connection()` na wszystkich stronach w fazie 2 | 2 | ISR bez korzyści — zbędny koszt Redis |
+| `router.refresh()` bez `updateTag` | 1–2 | Stary remote cache |
+| `revalidateTag` / `revalidatePath` | 1–2 | Poza modelem aplikacji |
 
 ---
 
-## 8. Wybór podejścia — diagram
+## Checklist — nowa funkcja
+
+**Dane (faza 1+, bez zmian w fazie 2)**
+
+- [ ] DATA: `"use cache: remote"` + `cacheLife` + tag.
+- [ ] UI: `"use cache: remote"` + `cacheLife` + tag, woła DATA.
+- [ ] Server Action z mutacją: `updateTag` (DATA + UI).
+
+**Strona — zależnie od fazy i typu**
+
+| | Faza 1 odczyt | Faza 1 mutacja | Faza 2 odczyt | Faza 2 mutacja |
+|--|---------------|----------------|---------------|----------------|
+| `connection()` | Nie | Tak | Nie | Tak |
+| ISR | lokalny per pod | wyłączony | Redis | wyłączony |
+| Po zapisie | — | `updateTag` + `router.refresh()` | — | `updateTag` + `router.refresh()` |
+
+---
+
+## Diagram wyboru (faza 2)
 
 ```mermaid
 flowchart TD
-    START["Nowy route lub zasób"] --> Q1{"Co cache'ujesz?"}
-    Q1 -- dane --> DATA["lib/data + components/cached-*\ncacheLife + tag"]
-    Q1 -- strona --> Q2{"Użytkownik zapisuje?"}
+    START["Nowy route"] --> Q1{"Użytkownik zapisuje\nna tej stronie?"}
+    Q1 -- tak --> MUT["Mutacja\nconnection() + remote\nupdateTag po zapisie"]
+    Q1 -- nie --> READ["Odczyt\nISR + remote\ntylko cacheLife"]
 
-    Q2 -- nie --> READ["Bez connection()\nISR włączony — faza 2"]
-    Q2 -- tak --> MUT["connection() w treści\nISR wyłączony"]
-
-    DATA --> Q3{"Mutacja na tym zasobie?"}
-    Q3 -- nie --> CL["tylko cacheLife"]
-    Q3 -- tak --> UT["cacheLife + updateTag po zapisie"]
+    MUT --> D1["DATA + UI: cacheLife + updateTag"]
+    READ --> D2["DATA + UI: cacheLife"]
 ```
 
 ---
 
-## 9. Checklist — nowa funkcja
+## Podsumowanie
 
-**Dane**
+| | Faza 1 | Faza 2 |
+|--|--------|--------|
+| **Handlery** | remote | remote + ISR |
+| **Dane** | `cacheLife` + `updateTag` | bez zmian |
+| **Strony odczytu** | lokalny route cache | ISR w Redis |
+| **Strony mutacji** | `connection()` + remote | bez zmian |
+| **Gate** | Kryteria akceptacji § Faza 1 | Kryteria akceptacji § Faza 2 |
 
-- [ ] Funkcja DATA: `"use cache: remote"` + `cacheLife` + tag.
-- [ ] Komponent UI: `"use cache: remote"` + `cacheLife` + tag, woła DATA.
-- [ ] Po mutacji: `updateTag` na DATA **i** UI (ten sam scope).
-
-**Strona**
-
-- [ ] Użytkownik zapisuje? → `connection()` w treści.
-- [ ] Tylko odczyt + faza 2? → bez `connection()`, ISR działa.
-- [ ] Po Server Action: `router.refresh()` na kliencie.
-
----
-
-## 10. Antywzorce
-
-| Antywzorzec | Dotyczy | Skutek |
-|-------------|---------|--------|
-| `updateTag` bez mutacji użytkownika | dane | Zbędne — wystarczy `cacheLife` |
-| Tylko `updateTag` na UI | dane | Stary snapshot DATA wewnątrz UI |
-| Brak `connection()` na stronie z zapisem | strona | Stara powłoka ISR po `updateTag` |
-| `router.refresh()` bez `updateTag` | dane | Widok ze starym remote cache |
-| `cacheLife("max")` na danych użytkownika | dane | Brak wygaśnięcia przy bugu w `updateTag` |
-| `revalidateTag` / `revalidatePath` | obie | Poza modelem aplikacji |
-
----
-
-## 11. Podsumowanie
-
-| Pytanie | Odpowiedź |
-|---------|-----------|
-| Gdzie cache’uję dane? | Remote — DATA + UI, `cacheLife`, opcjonalnie `updateTag` |
-| Gdzie cache’uję stronę? | ISR (faza 2) — tylko route’y odczytu |
-| Jak wyłączam cache strony? | `connection()` na route’ach z mutacją |
-| Skąd świeżość bez zapisu? | `cacheLife` |
-| Skąd świeżość po zapisie? | `updateTag` + `router.refresh()` |
-| Gdzie definiuję politykę? | Kod route’a (`connection()`) + warstwa danych (`cacheLife`, `updateTag`) — nie w handlerze |
-
-**Reguła:** dane i strony to osobne decyzje. Remote zawsze; ISR tylko na odczycie; mutacja = `connection()` + `updateTag` na danych.
+**Reguła:** najpierw ustabilizuj dane i mutacje (faza 1), potem dołóż ISR tylko na route’y odczytu (faza 2). Politykę definiujesz w kodzie route’a — nie w handlerze.
