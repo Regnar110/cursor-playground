@@ -30,6 +30,7 @@ cluster.
 | [03 — Invalidation](03-invalidation.md) | How tag invalidation works: Pub/Sub, tag timestamps, cross-instance synchronization |
 | [04 — Application benefits](04-application-benefits.md) | What to expect after adoption: fewer renders, cross-instance consistency, outage resilience |
 | [05 — Glossary](05-glossary.md) | Definitions of the terms used throughout this documentation |
+| [06 — Configuration](06-configuration.md) | Environment variables, defaults, and an example setup |
 
 ## Key defaults
 
@@ -43,4 +44,4 @@ cluster.
 | Cooldown after a Redis outage | 30 seconds | The handler doesn't flood a recovering Redis with connection attempts |
 
 All values are configurable via environment variables — see
-[docs/CONFIGURATION.md](../docs/CONFIGURATION.md) for the full list.
+[06 — Configuration](06-configuration.md) for the full list.
