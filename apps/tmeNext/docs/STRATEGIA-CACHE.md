@@ -9,7 +9,8 @@ Aplikacja: wiele podów Next.js, jeden build, load balancer, wspólny Redis.
 | `cacheHandlers.remote` | `"use cache: remote"` — fetchy i komponenty (Redis + LRU w podzie) |
 | `cacheHandler` (ISR) | Snapshot całego route'a (HTML + RSC) w Redis |
 
-`updateTag` czyści **remote**, nie snapshot ISR. Stąd reguła: strony z mutacją → `connection()`.
+`updateTag` czyści **remote**, nie snapshot ISR. Fragment z danymi po mutacji musi być
+**dynamiczny** (`connection()` w komponencie wewnątrz `<Suspense>`) — nie na całej stronie.
 
 ---
 
@@ -18,8 +19,8 @@ Aplikacja: wiele podów Next.js, jeden build, load balancer, wspólny Redis.
 | Kontrakt | Kiedy | Co robisz |
 |----------|-------|-----------|
 | **T** — czas decyduje | Katalog, lista, treść z API — lekka nieaktualność OK | `cacheLife`, bez `updateTag` |
-| **W** — zapis użytkownika | Formularz, edycja konta — po zapisie od razu widać zmianę | `cacheLife` + `updateTag` + `router.refresh()` + `connection()` na stronie |
-| **L** — live | Musi być świeże przy każdym żądaniu | `connection()`, fetch bez cache (lub `cacheLife("seconds")`) |
+| **W** — zapis użytkownika | Formularz, edycja konta — po zapisie od razu widać zmianę | `cacheLife` + `updateTag` + `router.refresh()` + `connection()` **tylko w komponencie RYOW** |
+| **L** — live | Musi być świeże przy każdym żądaniu | `connection()` w wąskim komponencie (Suspense), fetch bez cache |
 
 ---
 
@@ -31,7 +32,7 @@ Idź od najniższej wystarczającej — nie duplikuj bez powodu.
 |---------|-------|-------|
 | **DATA** | `lib/data/*.ts` | Zawsze, gdy fetch jest drogi |
 | **UI** | `components/cached-*.tsx` | Tylko gdy render JSX jest drogi albo inny `cacheLife` niż DATA |
-| **ISR** | automatycznie na route | Kontrakt T, strona katalogowa, **bez** `connection()` |
+| **ISR** | powłoka route (poza Suspense) | Kontrakt T: cała strona statyczna. Kontrakt W: shell może być w ISR, dziura dynamiczna w Suspense |
 
 Przy kontrakcie **W** invaliduj **DATA i UI** (hit w UI ma zamrożone dane wewnątrz).
 
@@ -63,20 +64,43 @@ const data = await getPosts(country, lang);
 
 ### Strona z mutacją (W)
 
+`connection()` **tylko** w komponencie, który musi być świeży — owiniętym w `<Suspense>`.
+Nagłówek, layout, statyczna otoczka zostają w powłoce ISR.
+
 ```tsx
-await connection(); // wyłącza ISR na tym route
+// page.tsx — BEZ connection() tutaj
+export default function AccountPage({ params }: Props) {
+  return (
+    <>
+      <PageHeader />
+      <Suspense fallback={<FormSkeleton />}>
+        <AccountContent params={params} />
+      </Suspense>
+    </>
+  );
+}
+
+async function AccountContent({ params }: { params: Promise<...> }) {
+  await connection(); // tylko ten segment jest dynamiczny
+  const { country, lang } = await params;
+  const profile = await getProfile(country, lang);
+  return <AccountForm initial={profile} />;
+}
 ```
 
 ```ts
-// Server Action
+// Server Action — updateTag + ponowny odczyt w tej samej akcji jeśli potrzebny
 updateTag(dataTag(...));
-updateTag(uiTag(...)); // jeśli jest warstwa UI
+updateTag(uiTag(...));
 ```
 
 ```tsx
-// klient po akcji
-router.refresh();
+router.refresh(); // klient — odświeża dynamiczną dziurę
 ```
+
+**HTTP 200 zamiast 304:** przy dynamicznej dziurze odpowiedź to zwykle 200 + stream
+(oczekiwane w PPR). To **nie** kasuje remote cache ani powłoki ISR — kasuje tylko
+pełny cache całego route'a, gdy `connection()` wstawisz na poziomie `page.tsx`.
 
 ---
 
@@ -104,11 +128,11 @@ Format: `{warstwa}:{zasób}[:{scope...}]` — np. `data:posts:pl:pl`, `ui:posts:
 
 ## Macierz — szybki wybór
 
-| | `connection()` | ISR | Remote | Po zapisie |
-|--|----------------|-----|--------|------------|
-| **T** katalog | Nie | Tak | `cacheLife` | — |
-| **W** mutacja | Tak | Nie | `cacheLife` + `updateTag` | `router.refresh()` |
-| **L** live | Tak | Nie | brak / `seconds` | — |
+| | `connection()` | ISR (powłoka) | Remote | Po zapisie |
+|--|----------------|---------------|--------|------------|
+| **T** katalog | Nie | Cały route | `cacheLife` | — |
+| **W** mutacja | Tylko komponent RYOW w Suspense | Shell tak, dziura dynamiczna | `cacheLife` + `updateTag` | `router.refresh()` |
+| **L** live | Wąski komponent w Suspense | Shell opcjonalnie | brak / `seconds` | — |
 
 ```mermaid
 flowchart TD
@@ -124,8 +148,8 @@ flowchart TD
 - `revalidateTag` / `revalidatePath` z Server Actions (SWR, nie read-your-own-writes)
 - `updateTag` bez mutacji
 - `updateTag` tylko na UI, bez DATA
-- `connection()` na wszystkich stronach (zabija ISR bez powodu)
-- Brak `connection()` na stronie z mutacją (stara powłoka ISR po zapisie)
+- `connection()` w `page.tsx` na całej stronie (zabija ISR całego route + zbędny 200)
+- Brak `connection()` w komponencie RYOW (stary snapshot ISR w dynamicznej dziurze po zapisie)
 - `cacheLife("max")` na danych edytowalnych przez użytkownika
 
 ---
@@ -135,8 +159,8 @@ flowchart TD
 1. [ ] Kontrakt T / W / L przypisany.
 2. [ ] DATA: `"use cache: remote"` + `cacheLife` + `cacheTag`.
 3. [ ] UI tylko jeśli potrzebne + ten sam scope tagów.
-4. [ ] W: `connection()` na stronie, `updateTag` (DATA + UI) w Server Action, `router.refresh()` na kliencie.
-5. [ ] T: brak `connection()` na katalogu.
+4. [ ] W: `connection()` w komponencie RYOW + `<Suspense>`, nie w `page.tsx`.
+5. [ ] T: brak `connection()` — cały route w ISR.
 
 ---
 
