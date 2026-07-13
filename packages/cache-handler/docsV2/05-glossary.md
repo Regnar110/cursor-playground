@@ -30,3 +30,9 @@
 | **L1-only mode** | Degraded operation during a Redis outage or build: the handler serves and stores entries in L1 only; the cache is not shared. |
 | **Cooldown** | The 30-second pause after a Redis connection failure during which the handler does not attempt to reconnect. |
 | **Instance** | A single running process of the application (e.g. one pod/container). Each instance has its own L1; all share the same L2. |
+| **`cacheHandler`** | The Next.js config field (singular) registering the **incremental cache handler** — full route cache, fetch cache, images. Distinct from `cacheHandlers` (plural) used by `use cache: remote`. |
+| **ISR handler** | The `@tme/cache-handler/isr` export implementing `cacheHandler`. Stores page HTML/RSC payloads in Redis under `isr:entry:*` so all instances share the same route cache. |
+| **Full route cache** | Next.js's cache of assembled page output (HTML shell + RSC data). Without a custom handler, stored on each instance's local disk. |
+| **Incremental cache** | The Next.js subsystem managed by `cacheHandler` — covers route pages, route handlers, fetch results and optimized images. |
+| **ISR tag record** | A Redis key `isr:tag:<tag>` marking when a tag was invalidated. Entries written before that timestamp are hidden on `get`. |
+| **`x-next-cache-tags`** | Response header Next.js attaches to cached page/route entries. The ISR handler reads it to know which tags guard an entry. |
