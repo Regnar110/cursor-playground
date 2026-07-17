@@ -33,6 +33,7 @@ cluster.
 | [06 — Configuration](06-configuration.md) | Environment variables, defaults, and an example setup |
 | [07 — ISR cache handler](07-isr-cache-handler.md) | Shared full route cache (`cacheHandler`) for multi-instance deployments |
 | [08 — Użycie bez ISR](08-uzycie-bez-isr.md) | Praktyczny przewodnik: `cacheLife` (wygaśnięcie wpisów) i `connection()` + `updateTag` (read-your-own-writes) — tylko `cacheHandlers.remote` |
+| [09 — Test checklist (remote handler)](09-test-checklist-remote-handler.md) | Checklist QA handlera (`get`/`set`/`updateTags`/…) — do wklejenia w Jirę, bez ISR i bez warstwy aplikacji |
 
 ## Key defaults
 
