@@ -205,7 +205,7 @@ async function set(cacheKey: string, pendingEntry: Promise<CacheEntry>): Promise
         /**
          * start redis transaction
          */
-        const pipeline = redis.multi();
+        const pipeline = redis.pipeline();
 
         /**
          * Add serializedEntry to redis without nesting in set's

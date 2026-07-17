@@ -135,7 +135,7 @@ export default class RedisIsrCacheHandler {
       }
 
       const now = Date.now();
-      const pipeline = redis.multi();
+      const pipeline = redis.pipeline();
 
       for (const tag of tagList) {
         const record: TagRecord = durations

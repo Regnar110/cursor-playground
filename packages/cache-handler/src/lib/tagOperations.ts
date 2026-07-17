@@ -94,7 +94,7 @@ export async function updateTags(
             }
         }
 
-        const pipeline = redis.multi();
+        const pipeline = redis.pipeline();
 
         for (const tag of tags) {
             pipeline.set(redisRevalidatedAtKey(tag), String(now), 'EX', TAG_META_TTL_SECONDS);

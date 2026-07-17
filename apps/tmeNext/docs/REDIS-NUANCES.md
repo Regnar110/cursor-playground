@@ -120,10 +120,10 @@ komenda się wywali, dwie pierwsze **zostają**. Błędy nie rzucają z `exec()`
 wracają per komenda jako pary `[err, result]` (handler obecnie je ignoruje — świadomy
 kompromis, najwyżej zadziała backstop/TTL).
 
-**Co daje:** jeden round-trip sieciowy i — dzięki `MULTI` — wykonanie całej paczki
-**bez przeplotu** z komendami innych klientów. Wystarcza nam w zupełności: kolejność
-"payload przed indeksem" jest zachowana, więc nie istnieje moment, w którym indeks
-wskazuje na nieistniejący wpis.
+**Co daje:** jeden round-trip sieciowy (pipeline). Kolejność komend w paczce jest
+zachowana względem siebie — payload przed indeksem — ale inne klienty mogą wykonać
+komendy między nimi (w przeciwieństwie do `MULTI`). W praktyce wystarcza nam to
+dla zapisu cache; spójność przy invalidacji wspiera backstop timestampów.
 
 ## 7. Indeks `SET` per tag — bo Redis nie umie "DEL WHERE tag = X"
 

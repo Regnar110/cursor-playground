@@ -1,7 +1,7 @@
 /**
  * In-memory ioredis stub covering exactly the API used by the remote cache handler:
  * connect/status/on, get/getBuffer/set/del/exists, sadd/smembers/srem, mget,
- * expire (NX/GT), eval (compare-and-delete lock), publish/subscribe, multi(),
+ * expire (NX/GT), eval (compare-and-delete lock), publish/subscribe, pipeline(),
  * hset/hdel/rpush/ltrim (debug telemetry).
  */
 const S = (globalThis.__fakeRedisState = globalThis.__fakeRedisState || {});
@@ -203,7 +203,7 @@ class FakeRedis {
     return 0;
   }
 
-  multi() {
+  pipeline() {
     const ops = [];
     const self = this;
     const pipeline = {
